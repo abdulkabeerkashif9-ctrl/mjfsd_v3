@@ -124,6 +124,36 @@ def _get_sales_order_item_row(sales_order, item_code):
 	return row
 
 
+@frappe.whitelist()
+def get_greige_weight(sales_order, item_code):
+	"""2026-09-28 (feature v3) - "Fetch ... greige weight (from TCS finish
+	table)(New Field)" (your words), for Daily Loom Production Item's new
+	Greige Weight field. Same Sales Order Item -> custom_towel_costing_sheet
+	lookup as get_raw_materials_for_row above, then the Finish Item Towel
+	Costing row (already on Towel Costing Sheet - Greige Weight already
+	exists there, nothing new needed on that side) whose Article matches
+	this row's Item. Returns 0 (not an error) when nothing resolves, since
+	this is a live-preview convenience fetch, not a hard requirement."""
+	if not (sales_order and item_code):
+		return 0
+
+	tcs_name = frappe.db.get_value(
+		"Sales Order Item",
+		{"parent": sales_order, "item_code": item_code},
+		"custom_towel_costing_sheet",
+	)
+	if not tcs_name:
+		return 0
+
+	return flt(
+		frappe.db.get_value(
+			"Finish Item Towel Costing",
+			{"parent": tcs_name, "article": item_code},
+			"greige_weight",
+		)
+	)
+
+
 def _get_weaving_contract(sales_order, sales_order_item_name):
 	"""Round 18: resolve 'the' Weaving Contract governing this Sales Order
 	Item's Article. Weaving Contract's own sales_order_item field is plain

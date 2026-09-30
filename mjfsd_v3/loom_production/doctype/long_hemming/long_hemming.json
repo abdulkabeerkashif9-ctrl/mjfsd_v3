@@ -6,6 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "date",
+  "supplier",
+  "hemming_rate",
   "column_break_1",
   "source_warehouse",
   "target_warehouse",
@@ -15,6 +17,7 @@
   "b_qty_warehouse",
   "section_break_1",
   "total_fabric_issued",
+  "total_hemming_amount",
   "section_break_items",
   "items",
   "section_break_wastage",
@@ -32,6 +35,19 @@
    "reqd": 1,
    "default": "Today",
    "in_list_view": 1
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier",
+   "description": "Hemming supplier / contractor."
+  },
+  {
+   "fieldname": "hemming_rate",
+   "fieldtype": "Currency",
+   "label": "Hemming Rate (per Pcs)",
+   "description": "Hemming Rate x (A Qty + B Qty) is added as an additional cost on the transfer Stock Entry, so it goes into the value of the towels moving on to Stitching & Finishing."
   },
   {
    "fieldname": "column_break_1",
@@ -87,6 +103,14 @@
    "label": "Total Issued Pcs",
    "read_only": 1,
    "description": "Sum of Issued Pcs across Items."
+  },
+  {
+   "fieldname": "total_hemming_amount",
+   "fieldtype": "Currency",
+   "label": "Hemming Amount",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "= Hemming Rate x total (A Qty + B Qty)."
   },
   {
    "fieldname": "section_break_items",
@@ -153,7 +177,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-14 00:00:00.000000",
+ "modified": "2026-09-26 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Loom Production",
  "name": "Long Hemming",

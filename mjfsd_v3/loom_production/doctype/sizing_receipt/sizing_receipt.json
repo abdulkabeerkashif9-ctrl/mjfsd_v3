@@ -10,6 +10,7 @@
  "field_order": [
   "section_break_input",
   "type",
+  "sales_order",
   "item",
   "set_no",
   "w_set",
@@ -67,6 +68,8 @@
    "options": "Beam\nYarn"
   },
   {
+   "description": "2026-09-28 (feature v3) - now fetched from the Sizing Program this receipt is created from (per your request), same pattern already used by Source Warehouse below. Requires Sizing Program's own new sales_order field (see its doctype json).",
+   "fetch_from": "sizing_program.sales_order",
    "fieldname": "sales_order",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -103,6 +106,8 @@
    "reqd": 1
   },
   {
+   "description": "2026-09-28 (feature v3) - now fetched from the Sizing Program this receipt is created from (per your request), same pattern already used by Source Warehouse below. Still editable (not locked) - say the word if it should be read-only like Source Warehouse.",
+   "fetch_from": "sizing_program.target_warehouse",
    "fieldname": "target_warehouse",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -160,17 +165,21 @@
    "default": "Cutpiece wastage - ET",
    "fieldname": "waste_account",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Waste Account",
    "options": "Account"
   },
   {
    "fieldname": "expense_account",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Expense Account",
    "options": "Account"
   },
   {
    "default": "0",
+   "description": "2026-09-28 (feature v3) - now fetched from the Sizing Program this receipt is created from (per your request).",
+   "fetch_from": "sizing_program.sizing_rate",
    "fieldname": "sizing_rate",
    "fieldtype": "Currency",
    "label": "Sizing Rate (LBS)"
@@ -229,6 +238,7 @@
   {
    "fieldname": "actual_yarn_rate",
    "fieldtype": "Currency",
+   "hidden": 1,
    "label": "Actual Yarn rate ",
    "precision": "2"
   },
@@ -274,7 +284,7 @@
   {
    "fieldname": "beem_rate_per_meter",
    "fieldtype": "Currency",
-   "in_list_view": 1,
+   "hidden": 1,
    "label": "Beem Rate (LBS) without Sizing",
    "read_only": 1
   },

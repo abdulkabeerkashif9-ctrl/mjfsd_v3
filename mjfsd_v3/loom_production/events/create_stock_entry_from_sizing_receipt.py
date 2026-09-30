@@ -91,6 +91,19 @@ def create_manufacture_stock_entry(sizing_receipt):
 	# same class of bug already documented in claude/weaving-receipt.md's
 	# "Lesson for future rate-dependent Stock Entry code in this project".
 	# This flag tells Frappe to keep the manually-set rate instead.
+	finish_amount = flt(basic_rate) * flt(sizing_receipt.length)
+	raw_qty_lbs = flt(sizing_receipt.lbs)
+
+	# 2026-09-28 (feature v3) - "Per LBS Rate = Total Incoming Value /
+	# Outgoing total qty" (your words). This Stock Entry only ever has one
+	# incoming row (this finish row, t_warehouse set) and one outgoing row
+	# (the Yarn Item row above, s_warehouse set, already in Lbs) - so
+	# Total Incoming Value is this row's own amount and Outgoing total
+	# qty is the raw Yarn Item's qty. Written onto custom_per_lbs_rate,
+	# the same Stock Entry Detail custom field already used the same way
+	# on the Weaving Receipt's own Manufacture Stock Entry.
+	per_lbs_rate = (finish_amount / raw_qty_lbs) if raw_qty_lbs else 0
+
 	se.append("items", {
 		"item_code": sizing_receipt.item,
 		"qty": sizing_receipt.length,
@@ -100,9 +113,10 @@ def create_manufacture_stock_entry(sizing_receipt):
 		"t_warehouse": sizing_receipt.target_warehouse,
 		"is_finished_item": 1,
 		"basic_rate": basic_rate,
-		"basic_amount": flt(basic_rate) * flt(sizing_receipt.length),
+		"basic_amount": finish_amount,
 		"set_basic_rate_manually": 1,
 		"allow_zero_valuation_rate": allow_zero_valuation,
+		"custom_per_lbs_rate": per_lbs_rate,
 	})
 
 	se.save(ignore_permissions=True)

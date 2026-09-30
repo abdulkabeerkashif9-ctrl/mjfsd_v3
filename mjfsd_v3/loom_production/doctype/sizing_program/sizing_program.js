@@ -297,6 +297,7 @@ frappe.ui.form.on("Sizing Program", {
     },
     lbs_issue:function(frm){
         calculate_cones_per_bag(frm);
+        recalc_sizing(frm);
     },
     // Meter is now entered manually - it no longer drives Bags Issue, so
     // Bags Issue no longer needs its own trigger (it's purely an output
@@ -337,6 +338,16 @@ function recalc_sizing(frm) {
     var warp_wastage_percent = flt(frm.doc.warp_wastage_percent);
     var warping_beam = flt(frm.doc.warping_beam);
     var sizing_beam = flt(frm.doc.sizing_beam);
+    // 2026-09-28 fix - "bags issue = (lbs issue + wastage) / 100" (your
+    // words) - the formula below was already exactly this, but lbs_issue
+    // itself was never read off frm.doc here, so it was an undefined
+    // variable. That's not a silent zero - a reference to an undefined
+    // variable throws in JavaScript, which killed this function right at
+    // the Bags Issue line and skipped every calculation after it,
+    // including Net Meter = Meter further down. That's why Net Meter
+    // wasn't updating either - the line that sets it was already
+    // correct, it just never ran.
+    var lbs_issue = flt(frm.doc.lbs_issue);
 
     // Cone Weight = LBS/Bag / Cones per Bag - kept for reference, no longer
     // feeds Meter (Meter is entered manually, see below).
@@ -359,11 +370,13 @@ function recalc_sizing(frm) {
     var wastage = lbs * (warp_wastage_percent / 100);
     frm.set_value('wastage', wastage);
 
-    // Bags Issue = (LBS + Wastage) / 100
-    var bags_issue = (lbs + wastage) / 100;
+    // Bags Issue = (LBS Issue + Wastage) / 100
+    var bags_issue = (lbs_issue + wastage) / 100;
     frm.set_value('bags_issue', bags_issue);
 
-    var net_meter = meter + wastage;
+    // Net Meter = Meter (your words: "net meters should be equal to
+    // meters").
+    var net_meter = meter;
     frm.set_value('net_meter', net_meter);
 
     var meter_warp_per_beam = warping_beam ? net_meter / warping_beam : 0;
@@ -528,14 +541,14 @@ function calculate_cones_per_bag(frm) {
     const bags_issue = frm.doc.bags_issue;
     const lbs_issue = frm.doc.lbs_issue;
 
-    // Ensure both values are numbers and bags_issue is not zero
-    if (bags_issue && lbs_issue && bags_issue !== 0) {
-        const cones = lbs_issue / bags_issue;
-        frm.set_value('cones_per_bag', cones);
-    } else {
-        // Set to 0 or handle as per your application's requirements
-        frm.set_value('cones_per_bag', 0);
-    }
+    // // Ensure both values are numbers and bags_issue is not zero
+    // if (bags_issue && lbs_issue && bags_issue !== 0) {
+    //     const cones = lbs_issue / bags_issue;
+    //     frm.set_value('cones_per_bag', cones);
+    // } else {
+    //     // Set to 0 or handle as per your application's requirements
+    //     frm.set_value('cones_per_bag', 0);
+    // }
 }
 
 function to_child(frm) {

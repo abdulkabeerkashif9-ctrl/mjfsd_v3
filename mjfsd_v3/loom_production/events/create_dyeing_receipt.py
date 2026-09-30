@@ -56,6 +56,11 @@ def get_dyeing_contract_items(dyeing_contracts):
 					"color_batch": color_batch,
 					"source_warehouse": dc.target_warehouse,
 					"target_warehouse": dc.source_warehouse,
+					# 2026-09-28 - "user can select different supplier in
+					# Dyeing Receipt" (your words) - fetched here so
+					# dyeing_receipt.js can set+lock it, same fix as
+					# Weaving Receipt's weaver.
+					"supplier": dc.supplier,
 				}
 			)
 

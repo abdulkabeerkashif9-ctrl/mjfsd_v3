@@ -87,6 +87,8 @@ def create_transfer_stock_entries(lh):
 	if not any_row:
 		frappe.throw(_("No Items have an A Qty / B Qty - nothing to transfer."))
 
+	add_hemming_cost(lh, se)
+
 	se.insert(ignore_permissions=True)
 	se.submit()
 	frappe.db.set_value("Long Hemming", lh.name, "transfer_stock_entry", se.name)
@@ -130,3 +132,39 @@ def cancel_linked_stock_entries(lh):
 		se = frappe.get_doc("Stock Entry", se_name)
 		if se.docstatus == 1:
 			se.cancel()
+
+
+def add_hemming_cost(lh, se):
+	"""2026-09-26 - Hemming Rate x (A Qty + B Qty) posted as an additional
+	cost on the transfer entry, so the hemming charge goes into the value
+	of the towels arriving at Stitching & Finishing (ERPNext spreads it
+	over the incoming rows). Credited to the company's "Expenses Included
+	In Valuation" account - the supplier's Purchase Invoice for hemming
+	should be booked against that same account to clear it."""
+	rate = flt(lh.get("hemming_rate"))
+	if not rate:
+		return
+
+	total_qty = sum(flt(d.qty) for d in se.items)
+	amount = rate * total_qty
+	if not amount:
+		return
+
+	account = frappe.get_cached_value("Company", se.company, "expenses_included_in_valuation")
+	if not account:
+		frappe.throw(
+			_("Set 'Expenses Included In Valuation' on Company {0} - the hemming charge is booked against it.").format(
+				se.company
+			)
+		)
+
+	se.append(
+		"additional_costs",
+		{
+			"expense_account": account,
+			"description": _("Hemming charges - {0} ({1} pcs @ {2}) - {3}").format(
+				lh.get("supplier") or _("no supplier"), total_qty, rate, lh.name
+			),
+			"amount": amount,
+		},
+	)

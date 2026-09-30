@@ -8,6 +8,7 @@
   "item",
   "color",
   "order_qty",
+  "so_balance",
   "dyeing_wastage_percent",
   "column_break_1",
   "issued_qty",
@@ -50,6 +51,14 @@
    "description": "Defaults to the Sales Order Item's AB Qty when fetched via 'Create Dyeing Contract' - editable afterwards. Amount recalculates from Rate x this whenever it changes."
   },
   {
+   "fieldname": "so_balance",
+   "fieldtype": "Float",
+   "label": "SO Balance (AB Qty)",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "AB Qty of this Sales Order row not yet assigned to any submitted Dyeing Contract, when this contract was created."
+  },
+  {
    "fieldname": "dyeing_wastage_percent",
    "fieldtype": "Float",
    "label": "Dyeing Wastage %"
@@ -78,10 +87,10 @@
   {
    "fieldname": "weight_issued_kg",
    "fieldtype": "Float",
-   "label": "Weight (kg) (Issued)",
+   "label": "Weight (LBS) (Issued)",
    "read_only": 1,
    "no_copy": 1,
-   "description": "Updated automatically by Issue Fabric - accumulates across multiple partial issues."
+   "description": "2026-09-28 - = (Issued Qty x TCS Finish Weight / 1000) x 2.2046. No longer manually entered/accumulated from Stock Entry."
   },
   {
    "fieldname": "received_qty",
@@ -103,10 +112,10 @@
   {
    "fieldname": "weight_received_kg",
    "fieldtype": "Float",
-   "label": "Weight (kg) (Received)",
+   "label": "Weight (LBS) (Received)",
    "read_only": 1,
    "no_copy": 1,
-   "description": "Updated automatically when a Dyeing Receipt referencing this row is submitted. Can never exceed Weight (kg) (Issued) - enforced on Dyeing Receipt submit."
+   "description": "2026-09-28 - = (Received Qty x TCS Finish Weight / 1000) x 2.2046."
   },
   {
    "fieldname": "column_break_2",
@@ -166,7 +175,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-14 00:00:00.000000",
+ "modified": "2026-09-26 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Loom Production",
  "name": "Dyeing Contract Item",

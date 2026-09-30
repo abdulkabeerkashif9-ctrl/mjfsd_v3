@@ -59,7 +59,8 @@ function open_weaving_contract_dialog(frm) {
 			}
 
 			let options = contracts.map((c) => ({
-				label: `${c.name} — ${c.finish_item || __("(no Finish Item)")} (${c.weaver_hint || __("Weaver n/a")})`,
+				label: `${c.name} — ${c.finish_item || __("(no Finish Item)")} `
+					+ `(${c.weaver_hint || __("Weaver n/a")}, balance ${format_number(c.balance_qty)} pcs)`,
 				value: c.name,
 				checked: 0
 			}));
@@ -87,7 +88,8 @@ function open_weaving_contract_dialog(frm) {
 						method: "mjfsd_v3.loom_production.events.create_weaving_receipt.get_weaving_contract_items",
 						args: { weaving_contracts: selected },
 						callback: (res) => {
-							(res.message || []).forEach((data) => {
+							let rows = res.message || [];
+							rows.forEach((data) => {
 								frm.add_child("items", {
 									finish_item: data.finish_item,
 									gross_weight: data.gross_weight,
@@ -101,6 +103,39 @@ function open_weaving_contract_dialog(frm) {
 							});
 							frm.refresh_field("items");
 							recalc_parent_totals(frm);
+
+							// 2026-09-28 (feature v3) - "when user gets item
+							// from Weaving Contract, the weaver should be
+							// automatically fetched and set to read only"
+							// (your words). Only set/locked when every
+							// selected contract agrees on the weaver - a
+							// receipt combining contracts from different
+							// weavers is left editable rather than silently
+							// picking one.
+							let weavers = [...new Set(rows.map((d) => d.weaver).filter(Boolean))];
+							if (weavers.length === 1) {
+								frm.set_value("weaver", weavers[0]);
+								frm.set_df_property("weaver", "read_only", 1);
+							} else {
+								frm.set_df_property("weaver", "read_only", 0);
+							}
+
+							// 2026-09-28 - "Source and Target warehouse is
+							// also empty. The source warehouse will be
+							// Supplier - PT by default and target warehouse
+							// will be Finished Goods - PT" (your words).
+							// Same fixed pair as the "Weaving Receipt"
+							// button on Weaving Contract itself
+							// (create_weaving_receipt_from_weaving_contract.py)
+							// - only filled in if not already set, so it
+							// never overwrites a value you picked yourself.
+							if (!frm.doc.source_warehouse) {
+								frm.set_value("source_warehouse", "Supplier - PT");
+							}
+							if (!frm.doc.target_warehouse) {
+								frm.set_value("target_warehouse", "Finished Goods - PT");
+							}
+
 							dialog.hide();
 						}
 					});

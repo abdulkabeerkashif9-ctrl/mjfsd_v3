@@ -13,6 +13,7 @@
   "date",
   "supplier",
   "item",
+  "sizing_rate",
   "quality",
   "beam_size",
   "column_break_zeiw",
@@ -52,6 +53,7 @@
   "amended_from",
   "weaving_contract",
   "weaver",
+  "sales_order",
   "total_yarn_return",
   "no_of_bags_required",
   "uom",
@@ -93,6 +95,13 @@
    "fieldtype": "Link",
    "label": "Brand",
    "options": "Item"
+  },
+  {
+   "default": "0",
+   "description": "2026-09-28 (feature v3) - new field, per your request. Carried onto the Sizing Receipt created from this Sizing Program (see the \"Create > Sizing Receipt\" button in sizing_program.js).",
+   "fieldname": "sizing_rate",
+   "fieldtype": "Currency",
+   "label": "Sizing Rate"
   },
   {
    "fieldname": "quality",
@@ -380,6 +389,16 @@
    "fieldtype": "Link",
    "label": "Weaver",
    "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "description": "2026-09-28 (feature v3) - new field, per your request (\"fetch ... sales order from sizing program\"). create_sizing_program_from_weaving_contract.py was already setting this on newly-created Sizing Programs, but the field itself didn't exist yet, so it was silently dropped - not persisted. Now real, hidden (mirrors weaving_contract/weaver above), and carried onto Sizing Receipt the same way.",
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Sales Order",
+   "no_copy": 1,
+   "options": "Sales Order",
    "read_only": 1
   },
   {

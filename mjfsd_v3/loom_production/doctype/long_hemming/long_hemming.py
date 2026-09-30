@@ -24,3 +24,5 @@ class LongHemming(Document):
 
 	def recalculate_totals(self):
 		self.total_fabric_issued = sum(flt(row.issued_pcs) for row in self.items or [])
+		total_hemmed = sum(flt(row.a_qty) + flt(row.b_qty) for row in self.items or [])
+		self.total_hemming_amount = flt(self.hemming_rate) * total_hemmed
