@@ -27,12 +27,30 @@
 // into (create_stock_entry_from_daily_towel_production.py) still has its
 // old name/path, on purpose - see the controller .py's own note.
 
-const RM_DELIMITER = " | ";
-
 frappe.ui.form.on('Daily Loom Production', {
 	refresh: function (frm) {
+		toggle_commercial(frm);
+		frm.set_query('weaver', 'items', function () {
+			return { filters: { supplier_group: 'Weaver' } };
+		});
+		['pile', 'ground'].forEach(function (type) {
+			frm.set_query(type + '_beam', 'items', function () {
+				return {
+					query: 'mjfsd_v3.loom_production.events.create_stock_entry_from_daily_towel_production.get_beam_batches',
+					filters: { beam_type: type === 'pile' ? 'Pile' : 'Ground' }
+				};
+			});
+		});
+		frm.set_query('weaving_contract', 'items', function () {
+			return { filters: { docstatus: 1, custom_status: 'Open' } };
+		});
 		frm.set_query('item', 'items', function (doc, cdt, cdn) {
 			const row = locals[cdt][cdn];
+			// Commercial rows have no Sales Order - any item (it is filled
+			// from the Weaving Contract's Finish Item anyway).
+			if (frm.doc.commercial) {
+				return {};
+			}
 			return {
 				query: 'mjfsd_v3.loom_production.events.create_stock_entry_from_daily_towel_production.get_sales_order_items',
 				filters: {
@@ -40,10 +58,46 @@ frappe.ui.form.on('Daily Loom Production', {
 				}
 			};
 		});
+	},
+	commercial: function (frm) {
+		toggle_commercial(frm);
+	},
+	shift: function (frm) {
+		(frm.doc.items || []).forEach(function (row) {
+			recalc_metrics(frm, row.doctype, row.name);
+		});
 	}
 });
 
+// Commercial: rows use a Weaving Contract; otherwise a Sales Order.
+function toggle_commercial(frm) {
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (!grid) {
+		return;
+	}
+	const commercial = frm.doc.commercial ? 1 : 0;
+	grid.update_docfield_property('sales_order', 'reqd', commercial ? 0 : 1);
+	grid.update_docfield_property('sales_order', 'hidden', commercial);
+	grid.update_docfield_property('weaving_contract', 'reqd', commercial);
+	grid.update_docfield_property('weaving_contract', 'hidden', commercial ? 0 : 1);
+	frm.refresh_field('items');
+}
+
 frappe.ui.form.on('Daily Loom Production Item', {
+	weaving_contract: function (frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (!row.weaving_contract) {
+			return;
+		}
+		// Item follows the Weaving Contract's Finish Item.
+		frappe.db.get_value('Weaving Contract', row.weaving_contract, 'construction').then(function (r) {
+			const construction = r.message && r.message.construction;
+			if (construction) {
+				frappe.model.set_value(cdt, cdn, 'item', construction);
+			}
+			refresh_material_fields(frm, cdt, cdn);
+		});
+	},
 	sales_order: function (frm, cdt, cdn) {
 		// A stale Item pick from a different Sales Order can't linger
 		// once the Sales Order itself changes.
@@ -53,8 +107,25 @@ frappe.ui.form.on('Daily Loom Production Item', {
 	// Finish Qty, which now feeds Total Greige Weight, which needs Greige
 	// Weight fetched off Sales Order + Item first. Wired as one small
 	// cascade rather than four separate recomputes.
+	loom: function (frm, cdt, cdn) {
+		recalc_metrics(frm, cdt, cdn);
+	},
+	rpm: function (frm, cdt, cdn) {
+		recalc_metrics(frm, cdt, cdn);
+	},
+	total_greige_weight_scale: function (frm, cdt, cdn) {
+		recalc_metrics(frm, cdt, cdn);
+	},
 	item: function (frm, cdt, cdn) {
+		recalc_metrics(frm, cdt, cdn);
 		fetch_greige_weight(frm, cdt, cdn);
+		refresh_material_fields(frm, cdt, cdn);
+	},
+	pile_beam: function (frm, cdt, cdn) {
+		default_beam_warehouse(cdt, cdn, 'pile');
+	},
+	ground_beam: function (frm, cdt, cdn) {
+		default_beam_warehouse(cdt, cdn, 'ground');
 	},
 	a_qty: function (frm, cdt, cdn) {
 		recalc_finish_qty(frm, cdt, cdn);
@@ -69,6 +140,7 @@ frappe.ui.form.on('Daily Loom Production Item', {
 		recalc_finish_qty(frm, cdt, cdn);
 	},
 	finish_qty: function (frm, cdt, cdn) {
+		recalc_metrics(frm, cdt, cdn);
 		recalc_total_greige_weight(frm, cdt, cdn);
 		recalculate_total_finish_qty(frm);
 	},
@@ -80,9 +152,6 @@ frappe.ui.form.on('Daily Loom Production Item', {
 	},
 	items_remove: function (frm) {
 		recalculate_total_finish_qty(frm);
-	},
-	raw_material_selection: function (frm, cdt, cdn) {
-		open_raw_material_dialog(frm, cdt, cdn);
 	}
 });
 
@@ -101,7 +170,7 @@ function recalc_finish_qty(frm, cdt, cdn) {
 // words). Live preview only, same reasoning as above.
 function recalc_total_greige_weight(frm, cdt, cdn) {
 	let row = locals[cdt][cdn];
-	let total = flt(row.greige_weight) * flt(row.finish_qty);
+	let total = flt(row.greige_weight) * flt(row.finish_qty) / 1000;
 	frappe.model.set_value(cdt, cdn, 'total_greige_weight', total);
 }
 
@@ -110,14 +179,15 @@ function recalc_total_greige_weight(frm, cdt, cdn) {
 // Order and Item set, same lookup Raw Material Selection already uses.
 function fetch_greige_weight(frm, cdt, cdn) {
 	let row = locals[cdt][cdn];
-	if (!row.sales_order || !row.item) {
+	if (!(frm.doc.commercial ? row.weaving_contract : row.sales_order) || !row.item) {
 		return;
 	}
 	frappe.call({
 		method: 'mjfsd_v3.loom_production.events.create_stock_entry_from_daily_towel_production.get_greige_weight',
 		args: {
-			sales_order: row.sales_order,
-			item_code: row.item
+			sales_order: frm.doc.commercial ? null : row.sales_order,
+			item_code: row.item,
+			weaving_contract: frm.doc.commercial ? row.weaving_contract : null
 		},
 		callback: function (r) {
 			if (r.message === undefined) {
@@ -137,87 +207,71 @@ function recalculate_total_finish_qty(frm) {
 	frm.set_value('total_finish_qty', total);
 }
 
-function open_raw_material_dialog(frm, cdt, cdn) {
+// Show only the warehouse / beam fields this row's item needs: Pile, Ground,
+// Weft, Fancy - read from the Weaving Contract (Commercial) or Towel Costing Sheet.
+function refresh_material_fields(frm, cdt, cdn) {
 	const row = locals[cdt][cdn];
-
-	if (!row.sales_order || !row.item || !row.finish_qty) {
-		frappe.msgprint(__('Set Sales Order, Item and Finish Qty on this row first.'));
+	if (!row.item || !(frm.doc.commercial ? row.weaving_contract : row.sales_order)) {
 		return;
 	}
-
 	frappe.call({
-		method: 'mjfsd_v3.loom_production.events.create_stock_entry_from_daily_towel_production.get_raw_materials_for_row',
+		method: 'mjfsd_v3.loom_production.events.create_stock_entry_from_daily_towel_production.get_row_material_types',
 		args: {
-			sales_order: row.sales_order,
+			sales_order: frm.doc.commercial ? null : row.sales_order,
 			item_code: row.item,
-			finish_qty: row.finish_qty
+			weaving_contract: frm.doc.commercial ? row.weaving_contract : null
 		},
 		callback: function (r) {
-			if (r.exc || !r.message || !r.message.length) {
-				return;
-			}
-			show_raw_material_dialog(frm, cdt, cdn, r.message);
+			const types = r.message || {};
+			Object.keys(types).forEach(function (key) {
+				frappe.model.set_value(cdt, cdn, 'has_' + key, types[key]);
+			});
+			// yarn goes out of the usual yarn store unless changed
+			['weft', 'fancy'].forEach(function (key) {
+				if (types[key] && !row[key + '_warehouse']) {
+					frappe.model.set_value(cdt, cdn, key + '_warehouse', 'Stores - PT');
+				}
+			});
 		}
 	});
 }
 
-function show_raw_material_dialog(frm, cdt, cdn, materials) {
-	const fields = [];
-
-	materials.forEach(function (m, idx) {
-		fields.push({
-			fieldtype: 'Section Break',
-			label: `${m.group}: ${m.item_code}`
-		});
-		fields.push({
-			fieldname: `source_${idx}`,
-			fieldtype: 'Data',
-			label: 'Source',
-			default: m.item_code,
-			read_only: 1
-		});
-		fields.push({
-			fieldname: `qty_${idx}`,
-			fieldtype: 'Float',
-			label: 'Qty',
-			default: m.qty,
-			read_only: 1
-		});
-		fields.push({
-			fieldname: `warehouse_${idx}`,
-			fieldtype: 'Link',
-			options: 'Warehouse',
-			label: 'Source Warehouse',
-			// Round 19: pre-filled from the Python side's default_warehouse
-			// (Beam Items -> that Beam's Sizing Receipt Target Warehouse,
-			// Yarn Items -> "Stores - PT") - still editable, not a lock.
-			default: m.default_warehouse || '',
-			reqd: 1
-		});
-	});
-
-	const dialog = new frappe.ui.Dialog({
-		title: __('Raw Material Selection'),
-		fields: fields,
-		primary_action_label: __('Confirm'),
-		primary_action: function (values) {
-			const items = [];
-			const qtys = [];
-			const warehouses = [];
-
-			materials.forEach(function (m, idx) {
-				items.push(m.item_code);
-				qtys.push(m.qty);
-				warehouses.push(values[`warehouse_${idx}`]);
-			});
-
-			frappe.model.set_value(cdt, cdn, 'raw_material_items', items.join(RM_DELIMITER));
-			frappe.model.set_value(cdt, cdn, 'raw_material_qty', qtys.join(RM_DELIMITER));
-			frappe.model.set_value(cdt, cdn, 'raw_material_warehouses', warehouses.join(RM_DELIMITER));
-
-			dialog.hide();
+// Picking a beam batch defaults its warehouse to where that beam was received.
+function default_beam_warehouse(cdt, cdn, type) {
+	const row = locals[cdt][cdn];
+	if (!row[type + '_beam']) {
+		return;
+	}
+	frappe.call({
+		method: 'mjfsd_v3.loom_production.events.create_stock_entry_from_daily_towel_production.get_beam_batch_info',
+		args: { batch: row[type + '_beam'] },
+		callback: function (r) {
+			if (r.message && r.message.target_warehouse && !row[type + '_warehouse']) {
+				frappe.model.set_value(cdt, cdn, type + '_warehouse', r.message.target_warehouse);
+			}
 		}
 	});
+}
 
-	dialog.show();
+// Efficiency figures (No of Picks, Panel, Avg Pcs Weight, Efficiency (100%),
+// Total Greige Weight (Scale LBS), Actual Efficiency, Unit Price). The server's
+// validate() recalculates them on save with the same function.
+function recalc_metrics(frm, cdt, cdn) {
+	const row = locals[cdt][cdn];
+	frappe.call({
+		method: 'mjfsd_v3.loom_production.doctype.daily_loom_production.daily_loom_production.get_row_metrics',
+		args: {
+			shift: frm.doc.shift,
+			loom: row.loom,
+			rpm: row.rpm,
+			item: row.item,
+			finish_qty: row.finish_qty,
+			total_greige_weight_scale: row.total_greige_weight_scale
+		},
+		callback: function (r) {
+			Object.entries(r.message || {}).forEach(function ([field, value]) {
+				frappe.model.set_value(cdt, cdn, field, value);
+			});
+		}
+	});
 }

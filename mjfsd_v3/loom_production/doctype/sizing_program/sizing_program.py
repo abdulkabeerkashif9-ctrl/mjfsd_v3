@@ -3,8 +3,20 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import  make_autoname
 from mjfsd_v3.loom_production.events.utils import get_doctypes_by_field
+from mjfsd_v3.loom_production.events import sizing_yarn_rows
 
 class SizingProgram(Document):
+	def validate(self):
+		sizing_yarn_rows.validate_program(self)
+
+	def onload(self):
+		# live Balance Net Meter per row (net meter less what Sizing Receipts took)
+		if self.get("yarn_items") and not self.is_new():
+			issued = sizing_yarn_rows.get_issued_meters([r.name for r in self.yarn_items])
+			self.set_onload(
+				"row_balances", {r.name: (r.net_meter or 0) - issued.get(r.name, 0) for r in self.yarn_items}
+			)
+
 	def on_submit(self):
 		if self.stock_return_item and len(self.stock_return_item) > 0:
 			self.make_stock_entry_for_stock_return_item()

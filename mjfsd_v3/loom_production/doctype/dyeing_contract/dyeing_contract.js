@@ -2,12 +2,15 @@ frappe.ui.form.on("Dyeing Contract", {
 	refresh(frm) {
 		if (frm.doc.docstatus === 1) {
 			frm.add_custom_button(__("Issue Fabric"), () => open_issue_fabric_dialog(frm));
+			// Gate Pass: opens a Stock Entry with every item still to be sent,
+			// taken from "Finished Goods - PT".
+			frm.add_custom_button(__("Gate Pass"), () => create_gate_pass(frm));
 			// New 2026-09-15 - same "create a prefilled draft and route to
 			// it" pattern already used by Weaving Contract's own "Weaving
 			// Receipt" button, reusing Dyeing Receipt's existing
 			// Get-Items-From-Dyeing-Contract row-building logic so both
 			// paths stay consistent.
-			frm.add_custom_button(__("Dyeing Receipt"), () => create_dyeing_receipt(frm), __("Create"));
+			frm.add_custom_button(__("Create Dyeing Receipt"), () => create_dyeing_receipt(frm));
 			// New 2026-09-16 - self-heals Issued Qty/Rolls/Weight from a
 			// live query against actually-submitted Stock Entries every
 			// time this form loads, instead of only ever trusting the
@@ -18,6 +21,43 @@ frappe.ui.form.on("Dyeing Contract", {
 		}
 	}
 });
+
+function create_gate_pass(frm) {
+	frappe.call({
+		method: "mjfsd_v3.loom_production.events.issue_fabric.create_gate_pass",
+		args: { dyeing_contract: frm.doc.name },
+		freeze: true,
+		callback: (r) => {
+			if (!r.message) return;
+			frappe.model.sync(r.message);
+			frappe.set_route("Form", r.message.doctype, r.message.name);
+		}
+	});
+}
+
+// LBS = AB Qty x Finish Weight (Gram: /1000 x 2.2046, LBS/Dozen: /12); Amount = LBS x Rate.
+// Live preview - the server recalculates the same on save.
+frappe.ui.form.on("Dyeing Contract Item", {
+	order_qty: (frm, cdt, cdn) => recalc_dyeing_row(frm, cdt, cdn),
+	rate: (frm, cdt, cdn) => recalc_dyeing_row(frm, cdt, cdn),
+	finish_weight: (frm, cdt, cdn) => recalc_dyeing_row(frm, cdt, cdn),
+	items_remove: (frm) => recalc_contract_amount(frm)
+});
+
+function recalc_dyeing_row(frm, cdt, cdn) {
+	const row = locals[cdt][cdn];
+	const fw = flt(row.finish_weight);
+	const lbs = row.finish_weight_uom === "LBS/Dozen"
+		? flt(row.order_qty) * (fw / 12)
+		: flt(row.order_qty) * (fw / 1000) * 2.2046;
+	frappe.model.set_value(cdt, cdn, "lbs", lbs);
+	frappe.model.set_value(cdt, cdn, "amount", flt(row.rate) * lbs);
+	recalc_contract_amount(frm);
+}
+
+function recalc_contract_amount(frm) {
+	frm.set_value("contract_amount", (frm.doc.items || []).reduce((sum, r) => sum + flt(r.amount), 0));
+}
 
 function sync_issued_totals(frm) {
 	frappe.call({

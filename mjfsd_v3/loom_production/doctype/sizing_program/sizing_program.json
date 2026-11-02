@@ -57,6 +57,8 @@
   "total_yarn_return",
   "no_of_bags_required",
   "uom",
+  "section_break_multi_yarn",
+  "yarn_items",
   "section_break_gbacc",
   "items",
   "section_break_yucn8",
@@ -94,7 +96,8 @@
    "fieldname": "item",
    "fieldtype": "Link",
    "label": "Brand",
-   "options": "Item"
+   "options": "Item",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "0",
@@ -107,13 +110,15 @@
    "fieldname": "quality",
    "fieldtype": "Select",
    "label": "Quality",
-   "options": "Cotton\nViscose"
+   "options": "Cotton\nViscose",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "beam_size",
    "fieldtype": "Link",
    "label": "Beam Size",
-   "options": "Beam Size"
+   "options": "Beam Size",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "column_break_zeiw",
@@ -123,26 +128,30 @@
    "fieldname": "yarn_count",
    "fieldtype": "Float",
    "label": "Yarn Count",
-   "precision": "2"
+   "precision": "2",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "100",
    "fieldname": "lbs_per_bag",
    "fieldtype": "Float",
-   "label": "Lbs / Bag"
+   "label": "Lbs / Bag",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "cones_per_bag",
    "fieldtype": "Float",
    "label": "Cones / Bag",
    "precision": "2",
-   "read_only": 0
+   "read_only": 0,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "sizing_beam",
    "fieldtype": "Float",
    "label": "Sizing Beam",
-   "precision": "2"
+   "precision": "2",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "4",
@@ -155,7 +164,8 @@
    "fieldname": "ends",
    "fieldtype": "Float",
    "label": "Ends",
-   "precision": "2"
+   "precision": "2",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "0.0",
@@ -163,7 +173,8 @@
    "fieldname": "meter",
    "fieldtype": "Float",
    "label": "Net Meter",
-   "precision": "2"
+   "precision": "2",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "column_break_zeiw1",
@@ -201,14 +212,16 @@
    "default": "0",
    "fieldname": "lbs_issue",
    "fieldtype": "Float",
-   "label": "LBS Issue"
+   "label": "LBS Issue",
+   "read_only_depends_on": "eval:(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "warping_beam",
    "fieldtype": "Float",
    "hidden": 1,
    "label": "Warping Beam",
-   "precision": "2"
+   "precision": "2",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "panna",
@@ -219,7 +232,8 @@
   {
    "fieldname": "section_break_zehrc",
    "fieldtype": "Section Break",
-   "label": "Output / Calculated Values"
+   "label": "Output / Calculated Values",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "0.0",
@@ -255,7 +269,7 @@
    "label": "Meter Warp / Beam",
    "precision": "2",
    "read_only": 1,
-   "hidden":1
+   "hidden": 1
   },
   {
    "default": "0.0",
@@ -265,7 +279,7 @@
    "label": "Meter Sizing Beam",
    "precision": "2",
    "read_only": 1,
-   "hidden":1
+   "hidden": 1
   },
   {
    "default": "0.0",
@@ -275,7 +289,7 @@
    "label": "Beam Length",
    "precision": "2",
    "read_only": 1,
-   "hidden":1
+   "hidden": 1
   },
   {
    "default": "0.0",
@@ -286,7 +300,7 @@
    "no_copy": 1,
    "precision": "2",
    "read_only": 1,
-   "allow_on_submit":1
+   "allow_on_submit": 1
   },
   {
    "fieldname": "column_break_r0xpw",
@@ -309,7 +323,7 @@
    "label": "LBS",
    "precision": "2",
    "read_only": 1,
-   "hidden":1
+   "hidden": 1
   },
   {
    "default": "0.0",
@@ -319,7 +333,7 @@
    "label": "LBS / Sizing Beam",
    "precision": "2",
    "read_only": 1,
-   "hidden":1
+   "hidden": 1
   },
   {
    "default": "0.0",
@@ -329,7 +343,7 @@
    "label": "LBS Consumed ",
    "precision": "2",
    "read_only": 1,
-   "hidden":1
+   "hidden": 1
   },
   {
    "default": "0.0",
@@ -339,7 +353,7 @@
    "label": "LBS Returnable",
    "precision": "2",
    "read_only": 1,
-   "hidden":1
+   "hidden": 1
   },
   {
    "default": "0",
@@ -407,7 +421,7 @@
    "fieldtype": "Float",
    "label": "Total Yarn Return",
    "read_only": 1,
-   "hidden":1
+   "hidden": 1
   },
   {
    "description": "(Ends / Cones Per Bag) / Warping Beam",
@@ -460,6 +474,19 @@
    "hidden": 1,
    "label": "Fabric Construction Detail",
    "options": "Fabric Construction Detail"
+  },
+  {
+   "fieldname": "section_break_multi_yarn",
+   "fieldtype": "Section Break",
+   "label": "Yarn Details (multiple finish items / yarns)",
+   "collapsible": 0
+  },
+  {
+   "fieldname": "yarn_items",
+   "fieldtype": "Table",
+   "label": "Yarn Details",
+   "options": "Sizing Program Yarn",
+   "allow_on_submit": 0
   }
  ],
  "index_web_pages_for_search": 1,
@@ -487,7 +514,7 @@
    "link_fieldname": "custom_sizing_program_gate_pass"
   }
  ],
- "modified": "2026-02-18 20:57:12.163972",
+ "modified": "2026-11-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Loom Production",
  "name": "Sizing Program",

@@ -25,6 +25,12 @@ frappe.ui.form.on("Dyeing Receipt Item", {
 	received_qty(frm, cdt, cdn) {
 		recalc_finish_weight(frm, cdt, cdn);
 		recalc_parent_total(frm);
+	},
+	weight_received_kg(frm, cdt, cdn) {
+		recalc_finish_weight(frm, cdt, cdn);
+	},
+	rate(frm, cdt, cdn) {
+		recalc_finish_weight(frm, cdt, cdn);
 	}
 });
 
@@ -49,7 +55,8 @@ function recalc_finish_weight(frm, cdt, cdn) {
 			// Rate x Received Qty (Pcs) - fixed to match the server
 			// (dyeing_receipt.py recalculate_totals), which this had
 			// drifted from.
-			let weight_lbs = finish_weight * 2.2046;
+			// Actual Weight is entered in LBS; the TCS-derived weight is the fallback
+			let weight_lbs = flt(row.weight_received_kg) || finish_weight * 2.2046;
 			frappe.model.set_value(cdt, cdn, "weight_received_lbs", weight_lbs);
 			frappe.model.set_value(cdt, cdn, "amount", flt(row.rate) * weight_lbs);
 		}

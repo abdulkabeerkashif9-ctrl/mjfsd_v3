@@ -388,3 +388,63 @@ def _recompute_dyeing_contract_issue_totals(dc_name):
 			"balance_weight_kg": total_weight_issued_kg - flt(received_totals.total_weight_received_kg),
 		},
 	)
+
+
+GATE_PASS_WAREHOUSE = "Finished Goods - PT"
+
+
+@frappe.whitelist()
+def create_gate_pass(dyeing_contract):
+	"""Dyeing Contract > Gate Pass: an unsaved Material Transfer Stock Entry with
+	every contract row still to be sent (AB Qty less what is already issued),
+	taken from "Finished Goods - PT" and tagged to the contract rows so Issued
+	Qty updates when the Stock Entry is submitted. Opened for review, not saved."""
+	dc = frappe.get_doc("Dyeing Contract", dyeing_contract)
+	if dc.docstatus != 1:
+		frappe.throw(_("Dyeing Contract must be submitted before a Gate Pass can be made."))
+
+	se = frappe.new_doc("Stock Entry")
+	se.stock_entry_type = "Material Transfer"
+	se.purpose = "Material Transfer"
+	se.company = frappe.defaults.get_global_default("company")
+	se.custom_dyeing_contract = dc.name
+	if dc.sales_order:
+		se.custom_sales_order = dc.sales_order
+
+	for row in dc.items or []:
+		remaining = flt(row.order_qty) - flt(row.issued_qty)
+		if remaining <= 0.0001:
+			continue
+		if not row.greige_batch:
+			frappe.throw(_("Row for Item {0} has no Greige Batch - can't issue.").format(row.item))
+		se.append(
+			"items",
+			{
+				"s_warehouse": GATE_PASS_WAREHOUSE,
+				"t_warehouse": dc.target_warehouse,
+				"item_code": row.item,
+				"qty": remaining,
+				"batch_no": row.greige_batch,
+				"use_serial_batch_fields": 1,
+				"uom": frappe.db.get_value("Item", row.item, "stock_uom"),
+				"custom_dyeing_contract_item": row.name,
+			},
+		)
+
+	if not se.items:
+		frappe.throw(_("All items of {0} have already been issued.").format(dc.name))
+	return se
+
+
+def validate_gate_pass_rows(doc, method=None):
+	"""Stock Entry validate hook: a row issued against a Dyeing Contract (Gate
+	Pass / Issue Fabric) must carry its No. of Rolls and Weight."""
+	for row in doc.get("items") or []:
+		if row.get("custom_dyeing_contract_item") and not (
+			flt(row.get("custom_no_of_rolls")) and flt(row.get("custom_weight_kgs"))
+		):
+			frappe.throw(
+				_("Row {0} ({1}): No. of Rolls and Weight are required on a Dyeing Gate Pass.").format(
+					row.idx, row.item_code
+				)
+			)

@@ -3,6 +3,7 @@ from frappe.model.document import Document
 from frappe.utils import flt
 
 from mjfsd_v3.loom_production.events.create_dyeing_contract import validate_dyeing_balance
+from mjfsd_v3.loom_production.events.dyeing_calc import apply_row_details, get_tcs_finish_row
 from mjfsd_v3.loom_production.events.issue_fabric import cancel_issued_stock_entries
 
 
@@ -41,7 +42,13 @@ class DyeingContract(Document):
 			tcs_finish_weight = _get_tcs_finish_weight(tcs_cache, row.towel_costing_sheet, row.item)
 			row.weight_issued_kg = calc_weight_lbs(row.issued_qty, tcs_finish_weight)
 			row.weight_received_kg = calc_weight_lbs(row.received_qty, tcs_finish_weight)
-			row.amount = flt(row.rate) * flt(row.weight_issued_kg)
+
+			# Finish Weight, Cut Size, LBS and Solid / Stripe / Yarn Dyed (by the
+			# TCS row's Dyeing Type); Amount = LBS x Rate
+			apply_row_details(row, get_tcs_finish_row(tcs_cache, row.towel_costing_sheet, row.item))
+			row.amount = flt(row.rate) * flt(row.lbs)
+
+		self.contract_amount = sum(flt(row.amount) for row in self.items or [])
 
 		self.total_issue_qty = sum(flt(row.issued_qty) for row in self.items or [])
 		self.total_received_qty = sum(flt(row.received_qty) for row in self.items or [])

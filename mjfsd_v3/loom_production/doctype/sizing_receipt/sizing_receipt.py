@@ -10,7 +10,29 @@ from mjfsd_v3.loom_production.events.create_stock_entry_from_sizing_receipt impo
 )
 
 
+from mjfsd_v3.loom_production.events.sizing_receipt_batches import (
+	create_batches,
+	disable_batches,
+	validate_before_submit,
+	validate_beam_no,
+)
+from mjfsd_v3.loom_production.events import sizing_yarn_rows
+
+
 class SizingReceipt(Document):
+	def before_submit(self):
+		validate_before_submit(self)
+
+	def validate(self):
+		sizing_yarn_rows.apply_receipt_totals(self)
+		validate_beam_no(self)
+		# Weaving Contract reference always follows the Sizing Program, so a
+		# receipt created any way (button, Create menu, manual) carries it.
+		if self.sizing_program and not self.get("weaving_contract"):
+			self.weaving_contract = frappe.db.get_value(
+				"Sizing Program", self.sizing_program, "weaving_contract"
+			)
+
 	def on_submit(self):
 		# Round 13: submitting a Sizing Receipt now automatically raises the
 		# Beem Receipt (Manufacture) Stock Entry, and - only if the Stock
@@ -18,7 +40,9 @@ class SizingReceipt(Document):
 		# The created Stock Entry names are stored back on this document
 		# (manufacture_stock_entry / material_transfer_stock_entry, both
 		# hidden) so on_cancel below knows exactly what to cancel.
-		manufacture_se = create_manufacture_stock_entry(self)
+		# one Batch per beam (Set No 01, Beam No 2 -> 01-1, 01-2)
+		batches = create_batches(self)
+		manufacture_se = create_manufacture_stock_entry(self, batches)
 		self.db_set("manufacture_stock_entry", manufacture_se, update_modified=False)
 
 		if self.stock_return_item:
@@ -27,3 +51,4 @@ class SizingReceipt(Document):
 
 	def on_cancel(self):
 		cancel_linked_stock_entries(self)
+		disable_batches(self)

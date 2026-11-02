@@ -2,6 +2,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+from mjfsd_v3.loom_production.events.dyeing_calc import apply_row_details, get_tcs_finish_row
+
 
 @frappe.whitelist()
 def create_dyeing_contract_from_sales_order(sales_order):
@@ -18,6 +20,7 @@ def create_dyeing_contract_from_sales_order(sales_order):
 	# row). Reduce Order Qty / delete rows to give this dyer only part of it.
 	used = get_dyeing_used(so.name)
 	has_color_rows = False
+	tcs_cache = {}
 
 	for row in so.items:
 		if not row.get("custom_color"):
@@ -32,7 +35,7 @@ def create_dyeing_contract_from_sales_order(sales_order):
 			continue
 
 		tcs = row.get("custom_towel_costing_sheet")
-		dc.append(
+		new_row = dc.append(
 			"items",
 			{
 				"item": row.item_code,
@@ -46,6 +49,7 @@ def create_dyeing_contract_from_sales_order(sales_order):
 				"greige_batch": row.get("custom_greige_batch"),
 			},
 		)
+		apply_row_details(new_row, get_tcs_finish_row(tcs_cache, tcs, row.item_code))
 
 	if not dc.items:
 		if has_color_rows:

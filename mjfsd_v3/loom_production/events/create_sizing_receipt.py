@@ -62,6 +62,7 @@ def create_sizing_receipts(sizing_program):
 		receipt.sizing_program = sp.name
 		receipt.sizing_program_item = row.name
 		receipt.source_warehouse = sp.source_warehouse
+		receipt.weaving_contract = sp.get("weaving_contract")
 		for fieldname in FIELDS_TO_COPY:
 			receipt.set(fieldname, row.get(fieldname))
 		receipt.insert(ignore_permissions=True)

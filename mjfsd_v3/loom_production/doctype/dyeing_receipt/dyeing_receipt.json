@@ -7,10 +7,14 @@
  "field_order": [
   "supplier",
   "date",
+  "vehicle_no",
   "column_break_1",
+  "driver",
+  "receiver_name",
   "source_warehouse",
   "target_warehouse",
   "total_received_qty",
+  "remarks",
   "section_break_items",
   "items",
   "repack_stock_entry",
@@ -34,8 +38,23 @@
    "in_list_view": 1
   },
   {
+   "fieldname": "vehicle_no",
+   "fieldtype": "Data",
+   "label": "Vehicle No."
+  },
+  {
    "fieldname": "column_break_1",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "driver",
+   "fieldtype": "Data",
+   "label": "Driver"
+  },
+  {
+   "fieldname": "receiver_name",
+   "fieldtype": "Data",
+   "label": "Receiver Name"
   },
   {
    "fieldname": "source_warehouse",
@@ -59,6 +78,11 @@
    "label": "Total Received Qty",
    "read_only": 1,
    "description": "Sum of Received Qty across Items."
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
   },
   {
    "fieldname": "section_break_items",
@@ -94,7 +118,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-14 00:00:00.000000",
+ "modified": "2026-10-26 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Loom Production",
  "name": "Dyeing Receipt",

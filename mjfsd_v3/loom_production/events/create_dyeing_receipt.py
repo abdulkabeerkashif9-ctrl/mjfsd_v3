@@ -44,6 +44,7 @@ def get_dyeing_contract_items(dyeing_contracts):
 			rows.append(
 				{
 					"item": row.item,
+					"weave": row.get("weave"),
 					"color": row.color,
 					"received_qty": 0,
 					"dyeing_wastage_percent": row.dyeing_wastage_percent,

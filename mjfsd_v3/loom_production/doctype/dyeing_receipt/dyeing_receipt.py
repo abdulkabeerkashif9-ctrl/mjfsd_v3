@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
 
@@ -11,6 +12,14 @@ from mjfsd_v3.loom_production.events.create_repack_stock_entry_from_dyeing_recei
 class DyeingReceipt(Document):
 	def validate(self):
 		self.recalculate_totals()
+
+	def before_submit(self):
+		# Actual Rolls and Actual Weight are mandatory when something is received
+		for row in self.items or []:
+			if flt(row.received_qty) and not (flt(row.rolls_received) and flt(row.weight_received_kg)):
+				frappe.throw(
+					_("Row {0} ({1}): Actual Rolls and Actual Weight (LBS) are required.").format(row.idx, row.item)
+				)
 
 	def on_submit(self):
 		create_repack_stock_entry(self)
@@ -38,7 +47,10 @@ class DyeingReceipt(Document):
 			# entered Weight (kg) (Received) field - that field is still
 			# there to record the actual scale reading, but no longer
 			# drives the lbs figure or the amount below.
-			row.weight_received_lbs = flt(row.finish_weight) * 2.2046
+			# 2026-10-27: Actual Weight is now entered in LBS and, once entered,
+			# is the weight the Amount uses; until then the TCS-derived weight
+			# above is used.
+			row.weight_received_lbs = flt(row.weight_received_kg) or flt(row.finish_weight) * 2.2046
 			# 2026-09-16 fix: Rate is a rate PER LBS (fetched from the
 			# Dyeing Contract), not per piece - `Rate x Received Qty` was
 			# the same per-lbs/per-piece unit mismatch fixed the same day

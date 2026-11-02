@@ -112,6 +112,7 @@ app_include_css = "/assets/mjfsd_v3/css/sizing_program.css"
 # }
 doc_events = {
     "Stock Entry": {
+        "validate": "mjfsd_v3.loom_production.events.issue_fabric.validate_gate_pass_rows",
         "on_submit": "mjfsd_v3.loom_production.events.stock_entry.custom_on_submit"
     }
 }

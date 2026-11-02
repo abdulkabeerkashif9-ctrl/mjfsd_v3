@@ -9,7 +9,7 @@ from frappe.utils import flt
 SOURCE_WAREHOUSE = "Supplier - PT"
 
 
-def create_manufacture_stock_entry(sizing_receipt):
+def create_manufacture_stock_entry(sizing_receipt, batches=None):
 	"""Called from Sizing Receipt's on_submit. Consumes the Yarn Item (Lbs)
 	from SOURCE_WAREHOUSE and receives the Beam item (Meter) into the
 	Sizing Receipt's own Target Warehouse.
@@ -46,21 +46,23 @@ def create_manufacture_stock_entry(sizing_receipt):
 	# and set explicitly here for the same reason, with
 	# set_basic_rate_manually so it isn't silently overwritten (round 17's
 	# fix, same lesson, applied to this row too).
-	yarn_item_rate = flt(frappe.db.get_value("Item", sizing_receipt.yarn_item, "valuation_rate"))
+	# One consumption row per yarn (a multi-yarn receipt has several).
+	from mjfsd_v3.loom_production.events.sizing_yarn_rows import consumption_lines
 
-	# Raw material consumed: Yarn Item, qty/UOM from the parent document.
-	se.append("items", {
-		"item_code": sizing_receipt.yarn_item,
-		"qty": sizing_receipt.lbs,
-		"uom": "Lbs",
-		"stock_uom": "Lbs",
-		"conversion_factor": 1,
-		"s_warehouse": SOURCE_WAREHOUSE,
-		"basic_rate": yarn_item_rate,
-		"basic_amount": yarn_item_rate * flt(sizing_receipt.lbs),
-		"set_basic_rate_manually": 1,
-		"allow_zero_valuation_rate": allow_zero_valuation,
-	})
+	for yarn_item, yarn_lbs in consumption_lines(sizing_receipt):
+		yarn_item_rate = flt(frappe.db.get_value("Item", yarn_item, "valuation_rate"))
+		se.append("items", {
+			"item_code": yarn_item,
+			"qty": yarn_lbs,
+			"uom": "Lbs",
+			"stock_uom": "Lbs",
+			"conversion_factor": 1,
+			"s_warehouse": SOURCE_WAREHOUSE,
+			"basic_rate": yarn_item_rate,
+			"basic_amount": yarn_item_rate * flt(yarn_lbs),
+			"set_basic_rate_manually": 1,
+			"allow_zero_valuation_rate": allow_zero_valuation,
+		})
 
 	# Finished item: the Beam item, in Meter. Length (Beam No x Beem Length,
 	# round 5 formula) is the field already carrying this beam's total
@@ -104,7 +106,7 @@ def create_manufacture_stock_entry(sizing_receipt):
 	# on the Weaving Receipt's own Manufacture Stock Entry.
 	per_lbs_rate = (finish_amount / raw_qty_lbs) if raw_qty_lbs else 0
 
-	se.append("items", {
+	finish_row = {
 		"item_code": sizing_receipt.item,
 		"qty": sizing_receipt.length,
 		"uom": "Meter",
@@ -117,7 +119,27 @@ def create_manufacture_stock_entry(sizing_receipt):
 		"set_basic_rate_manually": 1,
 		"allow_zero_valuation_rate": allow_zero_valuation,
 		"custom_per_lbs_rate": per_lbs_rate,
-	})
+	}
+
+	if batches:
+		# The Beam item is batch tracked: one finished row per beam/Batch. The
+		# receipt's total Length is split evenly across them, so the total
+		# quantity and value are exactly what they were with a single row.
+		se.use_serial_batch_fields = 1
+		per_beam_qty = flt(sizing_receipt.length) / len(batches)
+		for batch in batches:
+			se.append(
+				"items",
+				dict(
+					finish_row,
+					qty=per_beam_qty,
+					basic_amount=basic_rate * per_beam_qty,
+					batch_no=batch,
+					use_serial_batch_fields=1,
+				),
+			)
+	else:
+		se.append("items", finish_row)
 
 	se.save(ignore_permissions=True)
 	se.submit()

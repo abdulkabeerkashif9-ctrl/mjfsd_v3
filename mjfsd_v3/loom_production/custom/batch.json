@@ -121,6 +121,18 @@
    "translatable": 0,
    "unique": 0,
    "width": null
+  },
+  {
+   "dt": "Batch",
+   "doctype": "Custom Field",
+   "name": "Batch-beam_type",
+   "fieldname": "beam_type",
+   "fieldtype": "Select",
+   "label": "Beam Type",
+   "options": "Pile\nGround",
+   "insert_after": "item_name",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "custom_perms": [],
@@ -148,7 +160,7 @@
    "property": "field_order",
    "property_type": "Data",
    "row_name": null,
-   "value": "[\"sb_disabled\", \"disabled\", \"column_break_24\", \"use_batchwise_valuation\", \"sb_batch\", \"batch_id\", \"item\", \"item_name\", \"image\", \"parent_batch\", \"manufacturing_date\", \"column_break_3\", \"batch_qty\", \"stock_uom\", \"expiry_date\", \"source\", \"supplier\", null, null, \"column_break_9\", \"reference_doctype\", \"reference_name\", \"section_break_7\", \"description\", \"manufacturing_section\", \"qty_to_produce\", \"column_break_23\", \"produced_qty\"]"
+   "value": "[\"sb_disabled\", \"disabled\", \"column_break_24\", \"use_batchwise_valuation\", \"sb_batch\", \"batch_id\", \"item\", \"item_name\", \"beam_type\", \"image\", \"parent_batch\", \"manufacturing_date\", \"column_break_3\", \"batch_qty\", \"stock_uom\", \"expiry_date\", \"source\", \"supplier\", null, null, \"column_break_9\", \"reference_doctype\", \"reference_name\", \"section_break_7\", \"description\", \"manufacturing_section\", \"qty_to_produce\", \"column_break_23\", \"produced_qty\"]"
   }
  ],
  "sync_on_migrate": 1

@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, rounded
 
 # On Dyeing Receipt submit: one Repack Stock Entry, consuming each row's
 # Greige batch and producing the same Item under its Color batch - "finish
@@ -105,11 +105,15 @@ def create_repack_stock_entry(dyeing_receipt):
 		# No rate set here on purpose - Frappe computes the real
 		# valuation rate for this row during se.insert() below, and that
 		# authoritative rate/amount is what we read back.
+		# Greige consumed = Actual Qty + the Dyeing Wastage % of the contract,
+		# rounded to a whole number (the item is counted in Pcs / Nos)
+		greige_qty = rounded(flt(row.received_qty) * (1 + flt(row.dyeing_wastage_percent) / 100), 0)
+
 		greige_row = se.append(
 			"items",
 			{
 				"item_code": row.item,
-				"qty": row.received_qty,
+				"qty": greige_qty,
 				"s_warehouse": dr.source_warehouse,
 				"batch_no": row.greige_batch,
 				"use_serial_batch_fields": 1,
@@ -172,7 +176,8 @@ def create_repack_stock_entry(dyeing_receipt):
 		# from the stored weight_received_lbs field, so this doesn't depend
 		# on Dyeing Receipt's own validate() having already run in this
 		# same request.
-		weight_lbs = flt(row.weight_received_kg) * 2.2046
+		# Actual Weight is entered in LBS
+		weight_lbs = flt(row.weight_received_kg)
 
 		# 2026-09-16 fix: Rate (fetched from the Dyeing Contract) is a rate
 		# PER LBS, not per piece. Adding it straight onto greige_rate (a
@@ -187,7 +192,9 @@ def create_repack_stock_entry(dyeing_receipt):
 		if finish_qty:
 			dyeing_value_per_pc = (weight_lbs * flt(row.rate)) / finish_qty
 
-		finish_row.basic_rate = greige_rate + dyeing_value_per_pc
+		# The Greige actually consumed includes the wastage, so the finished
+		# pieces carry the whole Greige value plus the dyeing charge.
+		finish_row.basic_rate = (row_outgoing_value / finish_qty + dyeing_value_per_pc) if finish_qty else greige_rate
 		finish_row.basic_amount = finish_row.basic_rate * finish_qty
 		finish_row.amount = finish_row.basic_rate * finish_qty
 
@@ -199,7 +206,8 @@ def create_repack_stock_entry(dyeing_receipt):
 		# copied onto the Stock Entry's own row (Stock Entry Detail custom
 		# fields, see mjfsd_v3/custom/stock_entry_detail.json).
 		finish_row.custom_no_of_rolls = flt(row.rolls_received)
-		finish_row.custom_weight_kgs = flt(row.weight_received_kg)
+		# the Stock Entry's own weight field is in Kgs
+		finish_row.custom_weight_kgs = weight_lbs / 2.2046
 		finish_row.custom_total_lbs = weight_lbs
 
 	# submit() runs validate() itself (which will recompute amount from

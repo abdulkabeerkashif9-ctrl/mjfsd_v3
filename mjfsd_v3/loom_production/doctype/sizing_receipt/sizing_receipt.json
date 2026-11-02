@@ -45,6 +45,8 @@
   "final_cost_of_beam",
   "manufacture_stock_entry",
   "material_transfer_stock_entry",
+  "section_break_multi_yarn",
+  "yarn_items",
   "section_break_stock_return",
   "stock_return_item",
   "sizing_program_item",
@@ -103,7 +105,9 @@
    "in_list_view": 1,
    "label": "Yarn Item",
    "options": "Item",
-   "reqd": 1
+   "reqd": 0,
+   "mandatory_depends_on": "eval:!(doc.yarn_items||[]).length",
+   "read_only_depends_on": "eval:(doc.yarn_items||[]).length"
   },
   {
    "description": "2026-09-28 (feature v3) - now fetched from the Sizing Program this receipt is created from (per your request), same pattern already used by Source Warehouse below. Still editable (not locked) - say the word if it should be read-only like Source Warehouse.",
@@ -125,7 +129,9 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Yarn Count",
-   "reqd": 1
+   "reqd": 0,
+   "mandatory_depends_on": "eval:!(doc.yarn_items||[]).length",
+   "read_only_depends_on": "eval:(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "beam_no",
@@ -138,7 +144,8 @@
    "fieldname": "beem_length",
    "fieldtype": "Float",
    "label": "Beem Length",
-   "precision": "2"
+   "precision": "2",
+   "read_only_depends_on": "eval:(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "ends",
@@ -146,7 +153,9 @@
    "in_list_view": 1,
    "label": "Ends",
    "precision": "2",
-   "reqd": 1
+   "reqd": 0,
+   "mandatory_depends_on": "eval:!(doc.yarn_items||[]).length",
+   "read_only_depends_on": "eval:(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "column_break_input3",
@@ -159,7 +168,9 @@
    "in_list_view": 1,
    "label": "LBS",
    "precision": "2",
-   "reqd": 1
+   "reqd": 0,
+   "mandatory_depends_on": "eval:!(doc.yarn_items||[]).length",
+   "read_only_depends_on": "eval:(doc.yarn_items||[]).length"
   },
   {
    "default": "Cutpiece wastage - ET",
@@ -213,7 +224,9 @@
    "label": "Fabric Construction",
    "options": "Item",
    "read_only": 1,
-   "reqd": 1
+   "reqd": 0,
+   "mandatory_depends_on": "eval:!(doc.yarn_items||[]).length",
+   "read_only_depends_on": "eval:(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "sizing_name",
@@ -249,7 +262,8 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Yarn Consumption Per Meter",
-   "precision": "7"
+   "precision": "7",
+   "read_only_depends_on": "eval:(doc.yarn_items||[]).length"
   },
   {
    "default": "0",
@@ -389,11 +403,22 @@
    "fieldtype": "Table",
    "label": "Stock Return Item",
    "options": "Sizing Receipt Stock Return Item"
+  },
+  {
+   "fieldname": "section_break_multi_yarn",
+   "fieldtype": "Section Break",
+   "label": "Yarn Details (multiple finish items / yarns)"
+  },
+  {
+   "fieldname": "yarn_items",
+   "fieldtype": "Table",
+   "label": "Yarn Details",
+   "options": "Sizing Program Yarn"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-09 00:00:00.000000",
+ "modified": "2026-11-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Loom Production",
  "name": "Sizing Receipt",

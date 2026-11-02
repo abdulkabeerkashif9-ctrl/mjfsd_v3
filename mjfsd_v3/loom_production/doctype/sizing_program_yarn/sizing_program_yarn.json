@@ -1,0 +1,203 @@
+{
+ "actions": [],
+ "creation": "2026-11-02 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "weaving_contract",
+  "finish_item",
+  "yarn_item",
+  "yarn_count",
+  "cones_per_bag",
+  "lbs_per_bag",
+  "net_meter",
+  "lbs_issue",
+  "sizing_beam",
+  "beam_size",
+  "ends",
+  "beam",
+  "quality",
+  "wastage_percent",
+  "cone_weight",
+  "wastage",
+  "gross_meter",
+  "balance_net_meter",
+  "yarn_consumption_per_meter",
+  "lbs",
+  "balance_yarn",
+  "bags_issue",
+  "po_ref",
+  "sizing_program_row"
+ ],
+ "fields": [
+  {
+   "fieldname": "weaving_contract",
+   "fieldtype": "Link",
+   "label": "Weaving Contract",
+   "options": "Weaving Contract",
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "finish_item",
+   "fieldtype": "Link",
+   "label": "Finish Item",
+   "options": "Item",
+   "in_list_view": 1,
+   "columns": 2,
+   "fetch_from": "weaving_contract.construction",
+   "fetch_if_empty": 1
+  },
+  {
+   "fieldname": "yarn_item",
+   "fieldtype": "Link",
+   "label": "Yarn Item",
+   "options": "Item",
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "yarn_count",
+   "fieldtype": "Float",
+   "label": "Yarn Count",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "cones_per_bag",
+   "fieldtype": "Float",
+   "label": "Cones / Bag"
+  },
+  {
+   "fieldname": "lbs_per_bag",
+   "fieldtype": "Float",
+   "label": "LBS / Bag",
+   "default": "100"
+  },
+  {
+   "fieldname": "net_meter",
+   "fieldtype": "Float",
+   "label": "Net Meter",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "lbs_issue",
+   "fieldtype": "Float",
+   "label": "LBS Issue",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "sizing_beam",
+   "fieldtype": "Float",
+   "label": "Sizing Beam",
+   "in_list_view": 1,
+   "columns": 1,
+   "description": "Enter the SAME Sizing Beam on every row that shares one beam."
+  },
+  {
+   "fieldname": "beam_size",
+   "fieldtype": "Link",
+   "label": "Beam Size",
+   "options": "Beam Size"
+  },
+  {
+   "fieldname": "ends",
+   "fieldtype": "Float",
+   "label": "Ends"
+  },
+  {
+   "fieldname": "beam",
+   "fieldtype": "Float",
+   "label": "Beam"
+  },
+  {
+   "fieldname": "quality",
+   "fieldtype": "Select",
+   "label": "Quality",
+   "options": "\nCotton\nViscose"
+  },
+  {
+   "fieldname": "wastage_percent",
+   "fieldtype": "Percent",
+   "label": "Wastage %"
+  },
+  {
+   "fieldname": "cone_weight",
+   "fieldtype": "Float",
+   "label": "Cone Weight",
+   "read_only": 1
+  },
+  {
+   "fieldname": "wastage",
+   "fieldtype": "Float",
+   "label": "Wastage",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gross_meter",
+   "fieldtype": "Float",
+   "label": "Gross Meter",
+   "read_only": 1
+  },
+  {
+   "fieldname": "balance_net_meter",
+   "fieldtype": "Float",
+   "label": "Balance Net Meter",
+   "read_only": 1
+  },
+  {
+   "fieldname": "yarn_consumption_per_meter",
+   "fieldtype": "Float",
+   "label": "Yarn Consumption Per Meter",
+   "read_only": 1,
+   "precision": "6"
+  },
+  {
+   "fieldname": "lbs",
+   "fieldtype": "Float",
+   "label": "LBS (Required)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "balance_yarn",
+   "fieldtype": "Float",
+   "label": "Balance Yarn",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bags_issue",
+   "fieldtype": "Float",
+   "label": "Bags Issue",
+   "read_only": 1
+  },
+  {
+   "fieldname": "po_ref",
+   "fieldtype": "Data",
+   "label": "PO Ref",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sizing_program_row",
+   "fieldtype": "Data",
+   "label": "Sizing Program Row",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-02 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Loom Production",
+ "name": "Sizing Program Yarn",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

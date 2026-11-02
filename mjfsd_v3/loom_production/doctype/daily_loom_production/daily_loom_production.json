@@ -10,6 +10,7 @@
  "field_order": [
   "date",
   "shift",
+  "commercial",
   "column_break_details",
   "target_warehouse",
   "total_finish_qty",
@@ -32,6 +33,14 @@
    "label": "Shift",
    "options": "Shift",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Tick for a Commercial Weaving Contract: rows use a Weaving Contract instead of a Sales Order, and everything is calculated from that Weaving Contract (no Sales Order or Towel Costing Sheet).",
+   "fieldname": "commercial",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Commercial"
   },
   {
    "fieldname": "column_break_details",
@@ -80,7 +89,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-28 00:00:00.000000",
+ "modified": "2026-09-30 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Loom Production",
  "name": "Daily Loom Production",

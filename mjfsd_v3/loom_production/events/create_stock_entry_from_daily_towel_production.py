@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import flt
+from frappe.utils import cint, flt, nowtime
 
 # Round 14 Part B (2026-09-09): original Daily Towel Production events file -
 # see claude/daily-towel-production.md for the full spec this was built
@@ -125,7 +125,7 @@ def _get_sales_order_item_row(sales_order, item_code):
 
 
 @frappe.whitelist()
-def get_greige_weight(sales_order, item_code):
+def get_greige_weight(sales_order=None, item_code=None, weaving_contract=None):
 	"""2026-09-28 (feature v3) - "Fetch ... greige weight (from TCS finish
 	table)(New Field)" (your words), for Daily Loom Production Item's new
 	Greige Weight field. Same Sales Order Item -> custom_towel_costing_sheet
@@ -134,6 +134,12 @@ def get_greige_weight(sales_order, item_code):
 	exists there, nothing new needed on that side) whose Article matches
 	this row's Item. Returns 0 (not an error) when nothing resolves, since
 	this is a live-preview convenience fetch, not a hard requirement."""
+	# Commercial rows: Greige Weight is the Weaving Contract's own Gross
+	# Weight (same value the Sales Order flow copies onto the contract from
+	# the Towel Costing Sheet), no Sales Order / TCS involved.
+	if weaving_contract:
+		return flt(frappe.db.get_value("Weaving Contract", weaving_contract, "gross_weight"))
+
 	if not (sales_order and item_code):
 		return 0
 
@@ -182,10 +188,13 @@ def _find_sizing_receipt(sales_order, yarn_item, weaving_contract=None):
 	the tie-breaker either way - per Kabeer, even Sales Order + Weaving
 	Contract + Yarn Item isn't guaranteed unique."""
 	base_filters = {
-		"sales_order": sales_order,
 		"yarn_item": yarn_item,
 		"docstatus": 1,
 	}
+	# Commercial rows have no Sales Order - the Weaving Contract alone
+	# identifies the receipt.
+	if sales_order:
+		base_filters["sales_order"] = sales_order
 
 	# Round 19: target_warehouse fetched so the caller can default the
 	# Beam Items warehouse field to where this Beam actually is (see
@@ -204,6 +213,8 @@ def _find_sizing_receipt(sales_order, yarn_item, weaving_contract=None):
 		)
 		if receipt:
 			return receipt
+		if not sales_order:
+			return None
 
 	return frappe.db.get_value(
 		"Sizing Receipt",
@@ -215,13 +226,19 @@ def _find_sizing_receipt(sales_order, yarn_item, weaving_contract=None):
 
 
 @frappe.whitelist()
-def get_raw_materials_for_row(sales_order, item_code, finish_qty):
+def get_raw_materials_for_row(sales_order=None, item_code=None, finish_qty=0, weaving_contract=None):
 	"""Popup data source for the Raw Material Selection button. Returns
 	[{item_code, group, qty, reference}, ...] - see
 	claude/daily-towel-production.md for the full formula/grouping spec
 	this implements (Pile/Ground -> Beam Items via Sizing Receipt,
 	Weft/Fancy -> Yarn Items directly)."""
 	finish_qty = flt(finish_qty)
+
+	# Commercial: everything comes from the Weaving Contract, not the
+	# Sales Order / Towel Costing Sheet.
+	if weaving_contract:
+		return _get_contract_raw_materials(weaving_contract, finish_qty)
+
 	so_item = _get_sales_order_item_row(sales_order, item_code)
 
 	if not so_item.custom_towel_costing_sheet:
@@ -239,7 +256,16 @@ def get_raw_materials_for_row(sales_order, item_code, finish_qty):
 	materials = frappe.get_all(
 		"Towel Costing Sheet Raw Material",
 		filters={"parent": so_item.custom_towel_costing_sheet, "item": item_code},
-		fields=["`for`", "raw_material", "yarn_required_in_lbs"],
+		fields=["`for`", "raw_material", "yarn_required_in_lbs", "ratio"],
+	)
+
+	# Weaving Wastage % of this Finish Item on the Towel Costing Sheet
+	weaving_wastage = flt(
+		frappe.db.get_value(
+			"Finish Item Towel Costing",
+			{"parent": so_item.custom_towel_costing_sheet, "article": item_code},
+			"weaving_wastage_percet",
+		)
 	)
 
 	result = []
@@ -279,6 +305,8 @@ def get_raw_materials_for_row(sales_order, item_code, finish_qty):
 				# YARN_DEFAULT_WAREHOUSE above.
 				"default_warehouse": receipt.target_warehouse,
 				"rate": rate,
+				"ratio": flt(m.get("ratio")),
+				"weaving_wastage": weaving_wastage,
 			})
 		else:
 			qty = yarn_required_per_lbs * finish_qty
@@ -288,6 +316,8 @@ def get_raw_materials_for_row(sales_order, item_code, finish_qty):
 				"qty": qty,
 				"reference": None,
 				"default_warehouse": YARN_DEFAULT_WAREHOUSE,
+				"ratio": flt(m.get("ratio")),
+				"weaving_wastage": weaving_wastage,
 				# Round 19: not set for the Yarn Items group - Kabeer's
 				# screenshot showed this row's rate was already correct
 				# (matches Item.valuation_rate), only the Beam Items group
@@ -299,88 +329,359 @@ def get_raw_materials_for_row(sales_order, item_code, finish_qty):
 	return result
 
 
-def create_manufacture_stock_entry_for_row(doc, row):
-	"""One Manufacture Stock Entry per child row - consumes that row's
-	parsed Raw Material Items/Qty/Warehouses, produces Finish Qty of the
-	row's own Item into the parent's Target Warehouse."""
-	items = (row.raw_material_items or "").split(DELIMITER)
-	qtys = (row.raw_material_qty or "").split(DELIMITER)
-	warehouses = (row.raw_material_warehouses or "").split(DELIMITER)
+def _get_contract_raw_materials(weaving_contract, finish_qty):
+	"""Commercial version of get_raw_materials_for_row: one entry per BOM
+	Items row of the Weaving Contract. Yarn per piece = the contract's own
+	Yarn Qty / Order Qty (already worked out from Gross Weight, Ratio % and
+	Weaving Wastage % on the contract). Pile/Ground rows are consumed as
+	the Beam from their Sizing Receipt (matched on this Weaving Contract +
+	yarn); Weft/Fancy rows as loose yarn."""
+	wc = frappe.get_doc("Weaving Contract", weaving_contract)
+	if wc.docstatus != 1:
+		frappe.throw("Weaving Contract {} is not submitted.".format(weaving_contract))
+	order_qty = flt(wc.fabric_qty)
+	if not order_qty:
+		frappe.throw("Weaving Contract {} has no Order Qty - can't work out yarn per piece.".format(weaving_contract))
 
-	if not items or not items[0] or not (len(items) == len(qtys) == len(warehouses)):
+	result = []
+	for m in wc.bom_items or []:
+		if not m.yarn_count:
+			continue
+		yarn_required_per_pc = flt(m.yarn_qty) / order_qty
+
+		if m.get("for") in ("Pile", "Ground"):
+			receipt = _find_sizing_receipt(None, m.yarn_count, weaving_contract)
+			if not receipt:
+				frappe.throw(
+					"No submitted Sizing Receipt found for Weaving Contract {} / Yarn Item {} - "
+					"can't resolve a Beam item for the {} raw material.".format(
+						weaving_contract, m.yarn_count, m.get("for")
+					)
+				)
+			ratio = flt(receipt.lbs) / flt(receipt.length) if flt(receipt.length) else 0
+			qty = (yarn_required_per_pc / ratio) * finish_qty if ratio else 0
+			beem_length = flt(receipt.beem_length)
+			rate = flt(receipt.final_cost_of_beam) / beem_length if beem_length else 0
+			result.append({
+				"item_code": receipt.item,
+				"group": "Beam Items",
+				"qty": qty,
+				"reference": receipt.name,
+				"default_warehouse": receipt.target_warehouse,
+				"rate": rate,
+				"ratio": flt(m.ratio),
+				"weaving_wastage": flt(m.get("weaving_wastage")),
+			})
+		else:
+			result.append({
+				"item_code": m.yarn_count,
+				"group": "Yarn Items",
+				"qty": yarn_required_per_pc * finish_qty,
+				"reference": None,
+				"default_warehouse": YARN_DEFAULT_WAREHOUSE,
+				"rate": None,
+				"ratio": flt(m.ratio),
+				"weaving_wastage": flt(m.get("weaving_wastage")),
+			})
+
+	return result
+
+
+def _get_requirements(sales_order, item_code, weaving_contract=None):
+	"""Yarn needed per finished piece of this item, one dict per BOM line:
+	{"for", "yarn_count", "per_pc" (lbs), "ratio", "weaving_wastage"}.
+	Commercial rows read the Weaving Contract (only the lines of this Finish
+	Item on a Multi Item contract); others read the Towel Costing Sheet."""
+	if weaving_contract:
+		wc = frappe.get_doc("Weaving Contract", weaving_contract)
+		if wc.get("multi_item_weaving_contract") and wc.get("finish_items"):
+			source = next((r for r in wc.finish_items if r.finish_item == item_code), None)
+			order_qty = flt(source.order_qty) if source else 0
+			lines = [r for r in wc.bom_items or [] if r.get("finish_item") == item_code]
+		else:
+			order_qty = flt(wc.fabric_qty)
+			lines = list(wc.bom_items or [])
+		if not order_qty:
+			frappe.throw("Weaving Contract {} has no Order Qty for {} - can't work out yarn per piece.".format(weaving_contract, item_code))
+		return [
+			{
+				"for": r.get("for"),
+				"yarn_count": r.yarn_count,
+				"per_pc": flt(r.yarn_qty) / order_qty,
+				"ratio": flt(r.ratio),
+				"weaving_wastage": flt(r.get("weaving_wastage")),
+			}
+			for r in lines
+			if r.yarn_count
+		]
+
+	so_item = _get_sales_order_item_row(sales_order, item_code)
+	if not so_item.custom_towel_costing_sheet:
 		frappe.throw(
-			"Row {}: Raw Material Selection hasn't been run (or its result is incomplete) - "
-			"click Raw Material Selection before submitting.".format(row.idx)
+			"Sales Order Item {} on {} has no Towel Costing Sheet set "
+			"(custom_towel_costing_sheet) - can't work out raw materials without it.".format(item_code, sales_order)
 		)
+	wastage = flt(
+		frappe.db.get_value(
+			"Finish Item Towel Costing",
+			{"parent": so_item.custom_towel_costing_sheet, "article": item_code},
+			"weaving_wastage_percet",
+		)
+	)
+	materials = frappe.get_all(
+		"Towel Costing Sheet Raw Material",
+		filters={"parent": so_item.custom_towel_costing_sheet, "item": item_code},
+		fields=["`for`", "raw_material", "yarn_required_in_lbs", "ratio"],
+	)
+	return [
+		{
+			"for": m.get("for"),
+			"yarn_count": m.raw_material,
+			"per_pc": flt(m.yarn_required_in_lbs),
+			"ratio": flt(m.ratio),
+			"weaving_wastage": wastage,
+		}
+		for m in materials
+	]
 
-	# Round 18: Greige Batch for the finished row - see module docstring.
-	so_item = _get_sales_order_item_row(row.sales_order, row.item)
-	if not so_item.custom_greige_batch:
+
+@frappe.whitelist()
+def get_row_material_types(sales_order=None, item_code=None, weaving_contract=None):
+	"""Which yarn types (Pile / Ground / Weft / Fancy) this row's finished item
+	uses, so the row only shows the warehouse / beam fields it needs."""
+	types = {"pile": 0, "ground": 0, "weft": 0, "fancy": 0}
+	if not item_code or not (sales_order or weaving_contract):
+		return types
+	try:
+		for r in _get_requirements(sales_order, item_code, weaving_contract):
+			key = (r.get("for") or "").strip().lower()
+			if key in types:
+				types[key] = 1
+	except Exception:
+		frappe.clear_last_message()
+	return types
+
+
+@frappe.whitelist()
+def get_beam_batch_info(batch):
+	"""Where a Pile / Ground beam batch lives, to default the row's warehouse."""
+	data = frappe.db.get_value("Batch", batch, ["item", "batch_qty", "reference_doctype", "reference_name"], as_dict=True)
+	if not data:
+		return {}
+	if data.reference_doctype == "Sizing Receipt":
+		data["target_warehouse"] = frappe.db.get_value("Sizing Receipt", data.reference_name, "target_warehouse")
+	return data
+
+
+@frappe.whitelist()
+def get_beam_batches(doctype, txt, searchfield, start, page_len, filters):
+	"""Link query for Pile Beam / Ground Beam: every enabled Batch of that Beam
+	Type that still has stock. Not limited to any Weaving Contract or Sales
+	Order."""
+	filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+	return frappe.db.sql(
+		"""
+		select b.name, b.item, b.batch_qty
+		from `tabBatch` b
+		where b.disabled = 0
+			and ifnull(b.batch_qty, 0) > 0
+			and b.beam_type = %(beam_type)s
+			and (b.name like %(txt)s or b.item like %(txt)s)
+		order by b.creation desc
+		limit %(page_len)s offset %(start)s
+		""",
+		{
+			"beam_type": filters.get("beam_type"),
+			"txt": "%{}%".format(txt or ""),
+			"start": cint(start),
+			"page_len": cint(page_len),
+		},
+	)
+
+
+def _consumption_rows(row, commercial):
+	"""Raw material rows for one Daily Loom Production row: Pile / Ground are
+	consumed from the Beam Batch picked on the row (rate from that batch's
+	Sizing Receipt), Weft / Fancy as loose yarn from the row's warehouse."""
+	reqs = _get_requirements(row.sales_order, row.item, row.weaving_contract if commercial else None)
+	finish_qty = flt(row.finish_qty)
+	out = []
+
+	for beam_type in ("Pile", "Ground"):
+		lines = [r for r in reqs if (r.get("for") or "").strip() == beam_type]
+		if not lines:
+			continue
+		batch_name = row.get(f"{beam_type.lower()}_beam")
+		if not batch_name:
+			frappe.throw("Row {}: select the {} Beam batch.".format(row.idx, beam_type))
+		batch = frappe.db.get_value("Batch", batch_name, ["item", "reference_doctype", "reference_name"], as_dict=True)
+		receipt = (
+			frappe.db.get_value(
+				"Sizing Receipt",
+				batch.reference_name,
+				["lbs", "length", "target_warehouse", "final_cost_of_beam", "beem_length"],
+				as_dict=True,
+			)
+			if batch and batch.reference_doctype == "Sizing Receipt"
+			else None
+		)
+		if not receipt:
+			frappe.throw("Row {}: Batch {} was not created from a Sizing Receipt.".format(row.idx, batch_name))
+
+		ratio = flt(receipt.lbs) / flt(receipt.length) if flt(receipt.length) else 0
+		per_pc = sum(r["per_pc"] for r in lines)
+		qty = (per_pc / ratio) * finish_qty if ratio else 0
+		rate = flt(receipt.final_cost_of_beam) / flt(receipt.beem_length) if flt(receipt.beem_length) else 0
+		out.append({
+			"item_code": batch.item,
+			"qty": qty,
+			"s_warehouse": row.get(f"{beam_type.lower()}_warehouse") or receipt.target_warehouse,
+			"batch_no": batch_name,
+			"rate": rate,
+			"lbs_factor": sum(r["ratio"] / 100 * (1 + r["weaving_wastage"] / 100) for r in lines),
+		})
+
+	for r in reqs:
+		beam_type = (r.get("for") or "").strip()
+		if beam_type in ("Pile", "Ground"):
+			continue
+		out.append({
+			"item_code": r["yarn_count"],
+			"qty": r["per_pc"] * finish_qty,
+			"s_warehouse": row.get(f"{beam_type.lower()}_warehouse") or YARN_DEFAULT_WAREHOUSE,
+			"batch_no": None,
+			"rate": None,
+			"lbs_factor": r["ratio"] / 100 * (1 + r["weaving_wastage"] / 100),
+		})
+	return out
+
+
+def _check_batch_stock(doc, row, consumption):
+	"""Say clearly why a beam batch can't be consumed, before ERPNext's own
+	"negative stock" message: the batch balance is read as of this document's
+	date, then today, then in other warehouses."""
+	try:
+		from erpnext.stock.doctype.batch.batch import get_batch_qty
+	except ImportError:
+		return
+
+	for c in consumption:
+		if not c["batch_no"]:
+			continue
+		batch, warehouse, need = c["batch_no"], c["s_warehouse"], flt(c["qty"])
+		as_of = flt(get_batch_qty(batch, warehouse, posting_date=doc.date, posting_time=nowtime()))
+		if as_of + 0.0005 >= need:
+			continue
+
+		now_qty = flt(get_batch_qty(batch, warehouse))
+		elsewhere = [
+			"{} ({})".format(b.get("warehouse"), flt(b.get("qty")))
+			for b in (get_batch_qty(batch_no=batch) or [])
+			if b.get("warehouse") != warehouse and flt(b.get("qty")) > 0
+		]
+		if now_qty + 0.0005 >= need:
+			reason = (
+				"The stock is there now ({}) but not on {} - this document is dated before the "
+				"Sizing Receipt's Beem Receipt entry that brought it in. Use a later date.".format(now_qty, doc.date)
+			)
+		elif elsewhere:
+			reason = "That batch has stock in other warehouse(s): {}. Change the warehouse on the row.".format(
+				", ".join(elsewhere)
+			)
+		else:
+			reason = (
+				"The batch holds {} in {} (needs {}). If the Sizing Receipt was split over several beams, "
+				"each beam batch holds only its share of the receipt's length.".format(now_qty, warehouse, need)
+			)
 		frappe.throw(
-			"Row {}: Sales Order Item {} on {} has no Greige Batch set "
-			"(custom_greige_batch) - can't raise the Manufacture Stock Entry without one.".format(
-				row.idx, row.item, row.sales_order
+			"Row {}: batch {} ({}) has {} available in {} as of {}, but {} is needed. {}".format(
+				row.idx, batch, c["item_code"], as_of, warehouse, doc.date, need, reason
 			)
 		)
+
+
+def create_manufacture_stock_entry_for_row(doc, row):
+	"""One Manufacture Stock Entry per child row - consumes that row's raw
+	materials (Pile / Ground beam batches and loose Weft / Fancy yarn from the
+	warehouses on the row), produces Finish Qty of the row's own Item into the
+	parent's Target Warehouse."""
+	commercial = bool(doc.get("commercial"))
+	consumption = _consumption_rows(row, commercial)
+	if not consumption:
+		frappe.throw("Row {}: no raw materials found for {}.".format(row.idx, row.item))
+
+	# Round 18: Greige Batch for the finished row - see module docstring.
+	# Commercial rows have no Sales Order Item, so no Greige Batch is set.
+	greige_batch = None
+	if not commercial:
+		so_item = _get_sales_order_item_row(row.sales_order, row.item)
+		if not so_item.custom_greige_batch:
+			frappe.throw(
+				"Row {}: Sales Order Item {} on {} has no Greige Batch set "
+				"(custom_greige_batch) - can't raise the Manufacture Stock Entry without one.".format(
+					row.idx, row.item, row.sales_order
+				)
+			)
+		greige_batch = so_item.custom_greige_batch
+
+	_check_batch_stock(doc, row, consumption)
 
 	se = frappe.new_doc("Stock Entry")
 	se.stock_entry_type = "Manufacture"
 	se.purpose = "Manufacture"
 	se.set_posting_time = 1
 	se.posting_date = doc.date
-	# Round 18: reference fields, same convention as every other
-	# Stock-Entry-creating flow in this project - see custom field
-	# descriptions in mjfsd_v3/custom/stock_entry.json.
-	se.custom_sales_order = row.sales_order
+	if commercial:
+		se.weaving_contract = row.weaving_contract
+	else:
+		se.custom_sales_order = row.sales_order
 	se.custom_daily_towel_production = doc.name
-	# Round 18: required whenever batch_no is set directly via the API
-	# rather than left for Frappe to pick - same convention used
-	# everywhere else in this project batch_no is set this way.
-	se.use_serial_batch_fields = 1
+	# required whenever batch_no is set directly via the API
+	if greige_batch or any(c["batch_no"] for c in consumption):
+		se.use_serial_batch_fields = 1
 
-	# Round 19: rebuild an item_code -> rate map for the Beam Items group
-	# by calling get_raw_materials_for_row again - neither the resolved
-	# Sizing Receipt nor a rate was persisted from the dialog (only
-	# item_code/qty/warehouse are, in the three Data fields parsed
-	# above), so this is the only way to get back to "which Sizing
-	# Receipt priced this Beam item" without adding a new child-table
-	# field. Best-effort: if the underlying data shifted since Raw
-	# Material Selection was run (a Sizing Receipt was cancelled, say)
-	# and this throws, the Stock Entry still goes through - it just falls
-	# back to Frappe's own valuation for whichever rows aren't covered,
-	# same as before this round.
-	rate_by_item = {}
-	try:
-		for m in get_raw_materials_for_row(row.sales_order, row.item, row.finish_qty):
-			if m.get("rate"):
-				rate_by_item[m["item_code"]] = flt(m["rate"])
-	except Exception:
-		frappe.log_error(frappe.get_traceback(), "DTP Beam rate re-resolution failed")
-
-	for item_code, qty, warehouse in zip(items, qtys, warehouses):
+	total_lbs = 0.0
+	for c in consumption:
 		item_row = {
-			"item_code": item_code,
-			"qty": flt(qty),
-			"uom": frappe.db.get_value("Item", item_code, "stock_uom"),
-			"s_warehouse": warehouse,
+			"item_code": c["item_code"],
+			"qty": c["qty"],
+			"uom": frappe.db.get_value("Item", c["item_code"], "stock_uom"),
+			"s_warehouse": c["s_warehouse"],
 		}
-		if item_code in rate_by_item:
-			rate = rate_by_item[item_code]
+		if c["batch_no"]:
+			item_row["batch_no"] = c["batch_no"]
+			# Must be set on the ROW: otherwise ERPNext auto-picks its own batch
+			# for this outgoing row on submit and then rejects ours ("Serial and
+			# Batch Bundle ... has already created").
+			item_row["use_serial_batch_fields"] = 1
+		if c["rate"]:
 			item_row.update({
-				"basic_rate": rate,
-				"basic_amount": rate * flt(qty),
+				"basic_rate": c["rate"],
+				"basic_amount": c["rate"] * c["qty"],
 				"set_basic_rate_manually": 1,
 			})
+		# Total LBS = Total Greige Weight (Scale) * 2.2046 * Ratio % * (1 + Weaving Wastage %)
+		item_row["custom_total_lbs"] = flt(row.total_greige_weight_scale) * 2.2046 * c["lbs_factor"]
+		total_lbs += item_row["custom_total_lbs"]
 		se.append("items", item_row)
 
-	se.append("items", {
+	finished_row = {
 		"item_code": row.item,
 		"qty": row.finish_qty,
 		"uom": frappe.db.get_value("Item", row.item, "stock_uom"),
 		"t_warehouse": doc.target_warehouse,
 		"is_finished_item": 1,
-		"batch_no": so_item.custom_greige_batch,
-	})
+	}
+	# The finished row carries the sum of the raw material rows' Total LBS.
+	finished_row["custom_total_lbs"] = total_lbs
+	# Rolls and Weight (Kg) of this Daily Loom Production row, shown on the
+	# finished row (Stock Entry Detail custom fields).
+	finished_row["custom_no_of_rolls"] = flt(row.no_of_rolls)
+	finished_row["custom_weight_kgs"] = flt(row.weight_kg)
+	if greige_batch:
+		finished_row["batch_no"] = greige_batch
+		finished_row["use_serial_batch_fields"] = 1
+	se.append("items", finished_row)
 
 	se.save(ignore_permissions=True)
 	se.submit()

@@ -149,6 +149,18 @@ frappe.ui.form.on("Sizing Program", {
                 }
             });
         }
+        // Yarn Details table (multi finish item / yarn)
+        frm.set_query("yarn_item", "yarn_items", function () {
+            return { filters: { item_group: "Yarn" } };
+        });
+        frm.set_query("finish_item", "yarn_items", function () {
+            return { filters: { item_group: "Fabric" } };
+        });
+        const balances = (frm.doc.__onload || {}).row_balances;
+        if (balances && (frm.doc.yarn_items || []).length) {
+            frm.doc.yarn_items.forEach(r => { if (balances[r.name] !== undefined) { r.balance_net_meter = balances[r.name]; } });
+            frm.refresh_field("yarn_items");
+        }
         frm.set_query("item_returnable", function () {
             return {
                 "filters": {
@@ -266,6 +278,10 @@ frappe.ui.form.on("Sizing Program", {
         // once the new form has actually loaded, including hidden/read-only
         // fields like Sizing Program itself.
         frm.add_custom_button(__("Sizing Receipt"), function() {
+            if ((frm.doc.yarn_items || []).length) {
+                create_receipt_for_shared_beam(frm);
+                return;
+            }
             if (!frm.doc.fabric_construction || !frm.doc.item_returnable) {
                 frappe.msgprint(__('Please set Finish Item and Item Name on this Sizing Program before creating a Sizing Receipt.'));
                 return;
@@ -683,3 +699,93 @@ function compute_yarn_values(frm, cdt, cdn) {
         frappe.model.set_value(cdt, cdn, 'value_of_actual_yarn', value_of_actual_yarn);
         frappe.model.set_value(cdt, cdn, 'wastage_amount', wastage_amount);
     }
+
+// Multi finish item / yarn mode: one Sizing Receipt per shared Sizing Beam
+// (rows that carry the same Sizing Beam value go on the same receipt).
+function create_receipt_for_shared_beam(frm) {
+    if (frm.is_new() || frm.is_dirty()) {
+        frappe.msgprint(__('Please save the Sizing Program first.'));
+        return;
+    }
+    const open_receipt = function (beam) {
+        frappe.call({
+            method: "mjfsd_v3.loom_production.events.sizing_yarn_rows.make_sizing_receipt",
+            args: { sizing_program: frm.doc.name, sizing_beam: beam },
+            freeze: true,
+            callback: function (r) {
+                if (!r.exc && r.message) {
+                    frappe.model.sync(r.message);
+                    frappe.set_route("Form", r.message.doctype, r.message.name);
+                }
+            }
+        });
+    };
+    frappe.call({
+        method: "mjfsd_v3.loom_production.events.sizing_yarn_rows.get_beam_groups",
+        args: { sizing_program: frm.doc.name },
+        callback: function (r) {
+            const groups = (r.message || []).filter(g => flt(g.remaining) > 0.0001);
+            if (!groups.length) {
+                frappe.msgprint(__('All Sizing Beams of this program are already received.'));
+            } else if (groups.length == 1) {
+                open_receipt(groups[0].sizing_beam);
+            } else {
+                const d = new frappe.ui.Dialog({
+                    title: __('Select Sizing Beam'),
+                    fields: [{
+                        fieldname: 'beam', fieldtype: 'Select', label: __('Sizing Beam'), reqd: 1,
+                        options: groups.map(g => ({ value: g.sizing_beam, label: g.sizing_beam + ' - ' + g.rows + ' row(s) - ' + (g.finish_items || '') + ' - balance ' + flt(g.remaining, 2) + ' m' })),
+                        default: String(groups[0].sizing_beam)
+                    }],
+                    primary_action_label: __('Create'),
+                    primary_action: function (v) { d.hide(); open_receipt(v.beam); }
+                });
+                d.show();
+            }
+        }
+    });
+}
+
+// ---------------------------------------------------------------------
+// Yarn Details child table (multi finish item / multi yarn) - live preview
+// of the same formulas the server applies on save (sizing_yarn_rows.py).
+// Guarded so it registers once even if both Sizing doctype scripts load.
+// ---------------------------------------------------------------------
+if (!window.__sizing_yarn_rows_loaded) {
+    window.__sizing_yarn_rows_loaded = true;
+
+    window.sizing_yarn_recalc_row = function (frm, cdt, cdn) {
+        const r = locals[cdt][cdn];
+        const wpct = flt(r.wastage_percent);
+        const ycpm = flt(r.yarn_count) ? (flt(r.ends) / 768.1) / flt(r.yarn_count) : 0;
+        const lbs = flt(r.net_meter) * ycpm;
+        const wastage = lbs * wpct / 100;
+        const upd = {
+            cone_weight: flt(r.cones_per_bag) ? flt(r.lbs_per_bag) / flt(r.cones_per_bag) : 0,
+            yarn_consumption_per_meter: ycpm,
+            lbs: lbs,
+            wastage: wastage,
+            gross_meter: flt(r.net_meter) * (1 + wpct / 100),
+            bags_issue: (flt(r.lbs_issue) + wastage) / (flt(r.lbs_per_bag) || 100),
+            balance_yarn: flt(r.lbs_issue)
+        };
+        if (!r.sizing_program_row) {
+            upd.balance_net_meter = flt(r.net_meter);
+        }
+        Object.keys(upd).forEach(k => { r[k] = upd[k]; });
+        frm.refresh_field("yarn_items");
+    };
+
+    const recalc_fields = ["yarn_count", "cones_per_bag", "lbs_per_bag", "net_meter", "lbs_issue", "ends", "wastage_percent"];
+    const handlers = {
+        form_render: function (frm, cdt, cdn) { window.sizing_yarn_recalc_row(frm, cdt, cdn); },
+        yarn_items_add: function (frm, cdt, cdn) {
+            const r = locals[cdt][cdn];
+            if (!flt(r.lbs_per_bag)) { r.lbs_per_bag = 100; }
+            if (frm.doc.warp_wastage_percent && !flt(r.wastage_percent)) { r.wastage_percent = frm.doc.warp_wastage_percent; }
+            frm.refresh_field("yarn_items");
+        }
+    };
+    recalc_fields.forEach(f => { handlers[f] = function (frm, cdt, cdn) { window.sizing_yarn_recalc_row(frm, cdt, cdn); }; });
+    frappe.ui.form.on("Sizing Program Yarn", handlers);
+}
