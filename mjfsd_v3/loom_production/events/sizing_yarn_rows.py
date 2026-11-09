@@ -56,8 +56,8 @@ def get_issued_meters(program_row_names, exclude_receipt=None):
 		return {}
 	rows = frappe.db.sql(
 		"""
-		select y.sizing_program_row, coalesce(sum(y.net_meter), 0)
-		from `tabSizing Program Yarn` y
+		select y.sizing_program_row, coalesce(sum(y.beem_length), 0)
+		from `tabSizing Receipt Yarn` y
 		inner join `tabSizing Receipt` r on r.name = y.parent and y.parenttype = 'Sizing Receipt'
 		where r.docstatus < 2 and y.sizing_program_row in %s and r.name != %s
 		group by y.sizing_program_row
@@ -75,6 +75,9 @@ def set_balance_net_meter(program):
 
 def validate_program(doc):
 	"""Sizing Program.validate hook for the multi-row mode."""
+	# Quality is a Cotton/Viscose Select - never keep anything else in it
+	if doc.get("quality") not in (None, "", "Cotton", "Viscose"):
+		doc.quality = None
 	if not has_rows(doc):
 		return
 	calculate_rows(doc, default_wastage=flt(doc.get("warp_wastage_percent")) or None)
@@ -91,6 +94,10 @@ def validate_program(doc):
 		doc.fabric_construction = next((r.finish_item for r in doc.yarn_items if r.finish_item), None)
 	if not doc.get("po_number") and doc.get("name"):
 		doc.po_number = doc.name
+
+
+def total_beams(doc):
+	return sum({flt(r.sizing_beam) for r in doc.get("yarn_items") or []})
 
 
 def beam_groups(doc):
@@ -122,92 +129,134 @@ def get_beam_groups(sizing_program):
 
 
 @frappe.whitelist()
-def make_sizing_receipt(sizing_program, sizing_beam):
-	"""Unsaved Sizing Receipt for one shared beam, carrying every program row
-	that has that Sizing Beam (net meter = what is still left on the row)."""
+def make_sizing_receipt(sizing_program, sizing_beam=None, sizing_beams=None):
+	"""Unsaved Sizing Receipt for one OR SEVERAL shared beams (`sizing_beams`
+	is a JSON list of Sizing Beam values; `sizing_beam` a single one). Carries
+	every program row with one of those Sizing Beams (net meter = what is
+	still left on the row)."""
+	import json
+
 	sp = frappe.get_doc("Sizing Program", sizing_program)
-	beam = flt(sizing_beam)
-	rows = [r for r in sp.yarn_items if flt(r.sizing_beam) == beam]
+	if sizing_beams:
+		beams = {flt(b) for b in (json.loads(sizing_beams) if isinstance(sizing_beams, str) else sizing_beams)}
+	else:
+		beams = {flt(sizing_beam)}
+	rows = [r for r in sp.yarn_items if flt(r.sizing_beam) in beams]
 	if not rows:
-		frappe.throw(_("No rows with Sizing Beam {0} in {1}.").format(beam, sp.name))
-	if not sp.item_returnable:
-		frappe.throw(_("Set Item Name (beam item) on the Sizing Program first."))
+		frappe.throw(_("No rows with the selected Sizing Beam in {0}.").format(sp.name))
+	# Pile and Ground beams (different Beam Items) can be received together.
+	beam_item = next((r.get("beam_item") or sp.item_returnable for r in rows), None)
+	if not any(r.get("beam_item") or sp.item_returnable for r in rows):
+		frappe.throw(_("Set Item Name (beam item) on the Sizing Program, or Beam Item on the rows, first."))
 
 	issued = get_issued_meters([r.name for r in rows])
 	rec = frappe.new_doc("Sizing Receipt")
 	rec.sizing_program = sp.name
 	rec.source_warehouse = sp.source_warehouse
 	rec.target_warehouse = sp.target_warehouse
-	rec.sales_order = sp.get("sales_order")
-	rec.weaving_contract = rows[0].weaving_contract or sp.get("weaving_contract")
 	rec.sizing_name = sp.supplier
-	rec.item = sp.item_returnable
-	rec.sizing_rate = sp.sizing_rate
+	rec.item = beam_item
 	rec.type = "Beam"
-	rec.beam_no = cint(beam)
-	copy = [
-		"weaving_contract", "finish_item", "yarn_item", "yarn_count", "cones_per_bag", "lbs_per_bag",
-		"lbs_issue", "sizing_beam", "beam_size", "ends", "beam", "quality", "wastage_percent", "po_ref",
-	]
+	rec.date = frappe.utils.nowdate()
 	for r in rows:
 		left = flt(r.net_meter) - issued.get(r.name, 0)
 		if left <= 0.0001:
 			continue
-		line = {f: r.get(f) for f in copy}
-		line["net_meter"] = left
-		line["sizing_program_row"] = r.name
-		rec.append("yarn_items", line)
+		share = left / flt(r.net_meter) if flt(r.net_meter) else 1
+		rec.append(
+			"yarn_items",
+			{
+				"sales_order": (
+					frappe.db.get_value("Weaving Contract", r.weaving_contract, "sales_order")
+					if r.weaving_contract
+					else None
+				)
+				or sp.get("sales_order"),
+				"beam_item": r.get("beam_item") or sp.item_returnable,
+				"yarn_item": r.yarn_item,
+				"yarn_count": r.yarn_count,
+				"beam_no": cint(r.sizing_beam),
+				"beem_length": left,
+				"ends": r.ends,
+				"lbs": flt(r.lbs) * share,
+				"sizing_rate": sp.sizing_rate,
+				"sizing_program": sp.name,
+				"fabric_construction": r.finish_item,
+				"sizing_beam": r.sizing_beam,
+				"sizing_program_row": r.name,
+			},
+		)
 	if not rec.get("yarn_items"):
-		frappe.throw(_("Everything on Sizing Beam {0} is already received.").format(beam))
+		frappe.throw(_("Everything on the selected Sizing Beam(s) is already received."))
 	apply_receipt_totals(rec)
 	return rec
 
 
+def calculate_receipt_row(row, default_rate=None):
+	"""Same formulas the single-yarn Sizing Receipt always used (see
+	sizing_receipt.js), applied to one row."""
+	lbs = flt(row.lbs)
+	ends = flt(row.ends)
+	length = flt(row.beem_length)
+	actual_yarn_count = (ends * length) / 768.10 / lbs if lbs else 0
+	row.yarn_consumption_per_meter = round((ends / 768.1) / actual_yarn_count, 5) if ends and actual_yarn_count else 0
+	row.warp_weight = ends / 768.10 / actual_yarn_count if ends and actual_yarn_count else 0
+	if not flt(row.yarn_item_rate) and row.yarn_item:
+		row.yarn_item_rate = flt(frappe.db.get_value("Item", row.yarn_item, "valuation_rate"))
+	row.value_of_yarn = flt(row.yarn_item_rate) * lbs
+	row.sizing_amount = flt(row.sizing_rate) * lbs
+	row.beem_rate = flt(row.yarn_item_rate) + flt(row.sizing_rate)
+	row.final_cost_of_beam = row.value_of_yarn + row.sizing_amount
+
+
 def apply_receipt_totals(doc):
-	"""Sizing Receipt.validate hook for the multi-row mode: roll the rows up
-	into the header figures the existing Stock Entry / costing code reads."""
+	"""Sizing Receipt.validate hook for the multi-row mode: calculate every
+	row with the usual receipt formulas, then roll the rows up into the header
+	figures the existing Stock Entry / costing code reads."""
 	if not has_rows(doc):
 		return
-	calculate_rows(doc)
 	rows = doc.yarn_items
-	beam = flt(rows[0].sizing_beam)
 	for r in rows:
-		if flt(r.sizing_beam) != beam:
-			frappe.throw(_("A Sizing Receipt covers one shared beam - all rows must have the same Sizing Beam."))
-	doc.beam_no = cint(doc.beam_no) or cint(beam)
+		if not r.get("sizing_program"):
+			r.sizing_program = doc.get("sizing_program")
+		if not r.get("beam_item"):
+			r.beam_item = doc.get("item")
+		if not r.get("yarn_item"):
+			frappe.throw(_("Row {0}: Yarn Item is required.").format(r.idx))
+		if not cint(r.beam_no):
+			r.beam_no = cint(r.sizing_beam) or 1
+		if flt(r.sizing_beam) and cint(r.beam_no) > flt(r.sizing_beam):
+			frappe.throw(
+				_("Row {0}: Beam No ({1}) cannot be greater than the Sizing Beam ({2}).").format(
+					r.idx, cint(r.beam_no), flt(r.sizing_beam)
+				)
+			)
+		calculate_receipt_row(r)
 
-	total_net = sum(flt(r.net_meter) for r in rows)
+	groups = beam_item_groups(doc)
+	if groups and doc.get("item") not in [g["item"] for g in groups]:
+		doc.item = groups[0]["item"]
+
 	total_lbs = sum(flt(r.lbs) for r in rows)
-	others = get_issued_meters(
-		[r.sizing_program_row for r in rows if r.sizing_program_row],
-		exclude_receipt=None if doc.is_new() else doc.name,
-	)
-	for r in rows:
-		if r.sizing_program_row:
-			program_net = flt(frappe.db.get_value("Sizing Program Yarn", r.sizing_program_row, "net_meter"))
-			r.balance_net_meter = program_net - others.get(r.sizing_program_row, 0) - flt(r.net_meter)
-
 	doc.lbs = total_lbs
-	doc.beem_length = total_net / beam if beam else 0
+	doc.beem_length = sum(flt(r.beem_length) for r in rows)
 	doc.length = doc.beem_length
-	doc.yarn_consumption_per_meter = total_lbs / total_net if total_net else 0
+	doc.yarn_consumption_per_meter = total_lbs / doc.length if doc.length else 0
 	doc.yarn_item = rows[0].yarn_item
 	doc.yarn_count = flt(rows[0].yarn_count)
 	doc.ends = flt(rows[0].ends)
-	if not doc.get("fabric_construction"):
-		doc.fabric_construction = next((r.finish_item for r in rows if r.finish_item), None)
-	if not doc.get("weaving_contract"):
-		doc.weaving_contract = next((r.weaving_contract for r in rows if r.weaving_contract), None)
-
-	value = 0.0
-	for r in rows:
-		value += flt(frappe.db.get_value("Item", r.yarn_item, "valuation_rate")) * flt(r.lbs)
-	doc.value_of_yarn = value
-	doc.yarn_item_rate = value / total_lbs if total_lbs else 0
-	doc.sizing_amount = flt(doc.sizing_rate) * total_lbs
+	doc.fabric_construction = next((r.fabric_construction for r in rows if r.fabric_construction), None)
+	doc.value_of_yarn = sum(flt(r.value_of_yarn) for r in rows)
+	doc.sizing_amount = sum(flt(r.sizing_amount) for r in rows)
+	doc.yarn_item_rate = doc.value_of_yarn / total_lbs if total_lbs else 0
+	doc.sizing_rate = doc.sizing_amount / total_lbs if total_lbs else 0
 	doc.beem_rate = flt(doc.yarn_item_rate) + flt(doc.sizing_rate)
 	doc.beem_rate_per_meter = (doc.sizing_amount / doc.length if doc.length else 0) + flt(doc.beem_rate)
 	doc.final_cost_of_beam = doc.value_of_yarn + doc.sizing_amount
+	doc.set_no = cint(rows[0].set_no)
+	doc.w_set = rows[0].w_set
+	doc.beam_no = sum(g["beams"] for g in groups)
+	doc.sales_order = next((r.sales_order for r in rows if r.sales_order), None)
 
 
 def consumption_lines(doc):
@@ -218,3 +267,24 @@ def consumption_lines(doc):
 			lines[r.yarn_item] = lines.get(r.yarn_item, 0) + flt(r.lbs)
 		return list(lines.items())
 	return [(doc.yarn_item, flt(doc.lbs))]
+
+
+def beam_item_groups(doc):
+	"""Receipt rows grouped into physical beam sets: same Set No + Beam Item +
+	Sizing Beam (rows sharing a beam). For each: Beam Item, number of beams
+	(highest Beam No on its rows), meters (sum of Beam Length), yarn LBS and
+	cost (sum of each row's Final Cost Of Beam), in order of first
+	appearance."""
+	groups = {}
+	for r in doc.get("yarn_items") or []:
+		item = r.get("beam_item") or doc.get("item")
+		key = (cint(r.set_no), item, flt(r.sizing_beam))
+		g = groups.setdefault(
+			key, {"item": item, "set_no": cint(r.set_no), "beams": 0, "net": 0.0, "lbs": 0.0, "cost": 0.0, "rows": []}
+		)
+		g["beams"] = max(g["beams"], cint(r.beam_no), 1)
+		g["net"] += flt(r.beem_length)
+		g["lbs"] += flt(r.lbs)
+		g["cost"] += flt(r.final_cost_of_beam)
+		g["rows"].append(r)
+	return list(groups.values())

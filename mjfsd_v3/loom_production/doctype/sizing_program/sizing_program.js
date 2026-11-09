@@ -153,9 +153,15 @@ frappe.ui.form.on("Sizing Program", {
         frm.set_query("yarn_item", "yarn_items", function () {
             return { filters: { item_group: "Yarn" } };
         });
+        frm.set_query("beam_item", "yarn_items", function () {
+            return { filters: { item_group: "Beam" } };
+        });
         frm.set_query("finish_item", "yarn_items", function () {
             return { filters: { item_group: "Fabric" } };
         });
+        if (frm.doc.docstatus == 0 && (frm.doc.yarn_items || []).length) {
+            frm.doc.yarn_items.forEach(r => window.sizing_yarn_recalc_row(frm, r.doctype, r.name));
+        }
         const balances = (frm.doc.__onload || {}).row_balances;
         if (balances && (frm.doc.yarn_items || []).length) {
             frm.doc.yarn_items.forEach(r => { if (balances[r.name] !== undefined) { r.balance_net_meter = balances[r.name]; } });
@@ -211,6 +217,11 @@ frappe.ui.form.on("Sizing Program", {
                 }
             }
         });
+        if (frm.doc.docstatus == 0) {
+            frm.add_custom_button(__('Weaving Contract'), function() {
+                get_items_from_weaving_contracts(frm);
+            }, __('Get Items From')).css('background-color', '#2490EF').css('color', '#ffffff');
+        }
         if (frm.doc.docstatus == 1) {
             frm.add_custom_button(__('Stock Entry'), function() {
                 frappe.call({
@@ -324,6 +335,11 @@ frappe.ui.form.on("Sizing Program", {
     },
     warp_wastage_percent: function (frm) {
         recalc_sizing(frm);
+        // rows with no Wastage % of their own follow the header value
+        (frm.doc.yarn_items || []).forEach(r => {
+            if (!flt(r.wastage_percent)) { r.wastage_percent = frm.doc.warp_wastage_percent; }
+            window.sizing_yarn_recalc_row(frm, r.doctype, r.name);
+        });
     },
     meter: function (frm) {
         recalc_sizing(frm);
@@ -500,6 +516,10 @@ frappe.ui.form.on('Sizing Program Stock Return Item',{
 });
 
 function update_total_yarn_return(frm) {
+    if (window.sizing_yarn_allocate_returns) {
+        window.sizing_yarn_allocate_returns(frm);
+        frm.refresh_field("yarn_items");
+    }
     let total = 0;
     let lbs_issue = frm.doc.lbs_issue;
     frm.doc.stock_return_item.forEach(function(row) {
@@ -707,10 +727,10 @@ function create_receipt_for_shared_beam(frm) {
         frappe.msgprint(__('Please save the Sizing Program first.'));
         return;
     }
-    const open_receipt = function (beam) {
+    const open_receipt = function (beams) {
         frappe.call({
             method: "mjfsd_v3.loom_production.events.sizing_yarn_rows.make_sizing_receipt",
-            args: { sizing_program: frm.doc.name, sizing_beam: beam },
+            args: { sizing_program: frm.doc.name, sizing_beams: JSON.stringify(beams) },
             freeze: true,
             callback: function (r) {
                 if (!r.exc && r.message) {
@@ -728,17 +748,22 @@ function create_receipt_for_shared_beam(frm) {
             if (!groups.length) {
                 frappe.msgprint(__('All Sizing Beams of this program are already received.'));
             } else if (groups.length == 1) {
-                open_receipt(groups[0].sizing_beam);
+                open_receipt([groups[0].sizing_beam]);
             } else {
+                // one tick per shared beam - tick several to receive them on ONE Sizing Receipt
                 const d = new frappe.ui.Dialog({
-                    title: __('Select Sizing Beam'),
-                    fields: [{
-                        fieldname: 'beam', fieldtype: 'Select', label: __('Sizing Beam'), reqd: 1,
-                        options: groups.map(g => ({ value: g.sizing_beam, label: g.sizing_beam + ' - ' + g.rows + ' row(s) - ' + (g.finish_items || '') + ' - balance ' + flt(g.remaining, 2) + ' m' })),
-                        default: String(groups[0].sizing_beam)
-                    }],
+                    title: __('Select Sizing Beam(s)'),
+                    fields: groups.map((g, i) => ({
+                        fieldname: 'beam_' + i, fieldtype: 'Check', default: 1,
+                        label: g.sizing_beam + ' - ' + g.rows + ' row(s) - ' + (g.finish_items || '') + ' - balance ' + flt(g.remaining, 2) + ' m'
+                    })),
                     primary_action_label: __('Create'),
-                    primary_action: function (v) { d.hide(); open_receipt(v.beam); }
+                    primary_action: function (v) {
+                        const picked = groups.filter((g, i) => v['beam_' + i]).map(g => g.sizing_beam);
+                        if (!picked.length) { frappe.msgprint(__('Select at least one Sizing Beam.')); return; }
+                        d.hide();
+                        open_receipt(picked);
+                    }
                 });
                 d.show();
             }
@@ -754,6 +779,21 @@ function create_receipt_for_shared_beam(frm) {
 if (!window.__sizing_yarn_rows_loaded) {
     window.__sizing_yarn_rows_loaded = true;
 
+    // Balance Yarn = LBS Issue - returned yarn of that yarn item (returns are
+    // taken off the rows of that yarn in order, same as the server).
+    window.sizing_yarn_allocate_returns = function (frm) {
+        const returns = {};
+        (frm.doc.stock_return_item || []).forEach(x => {
+            returns[x.yarn_item] = (returns[x.yarn_item] || 0) + flt(x.qty_lbs);
+        });
+        (frm.doc.yarn_items || []).forEach(r => {
+            const ret = returns[r.yarn_item] || 0;
+            const take = ret > 0 ? Math.min(ret, flt(r.lbs_issue)) : 0;
+            r.balance_yarn = flt(r.lbs_issue) - take;
+            returns[r.yarn_item] = ret - take;
+        });
+    };
+
     window.sizing_yarn_recalc_row = function (frm, cdt, cdn) {
         const r = locals[cdt][cdn];
         const wpct = flt(r.wastage_percent);
@@ -766,13 +806,13 @@ if (!window.__sizing_yarn_rows_loaded) {
             lbs: lbs,
             wastage: wastage,
             gross_meter: flt(r.net_meter) * (1 + wpct / 100),
-            bags_issue: (flt(r.lbs_issue) + wastage) / (flt(r.lbs_per_bag) || 100),
-            balance_yarn: flt(r.lbs_issue)
+            bags_issue: (flt(r.lbs_issue) + wastage) / (flt(r.lbs_per_bag) || 100)
         };
         if (!r.sizing_program_row) {
             upd.balance_net_meter = flt(r.net_meter);
         }
         Object.keys(upd).forEach(k => { r[k] = upd[k]; });
+        window.sizing_yarn_allocate_returns(frm);
         frm.refresh_field("yarn_items");
     };
 
@@ -788,4 +828,47 @@ if (!window.__sizing_yarn_rows_loaded) {
     };
     recalc_fields.forEach(f => { handlers[f] = function (frm, cdt, cdn) { window.sizing_yarn_recalc_row(frm, cdt, cdn); }; });
     frappe.ui.form.on("Sizing Program Yarn", handlers);
+}
+
+
+// Add Yarn Details rows from any number of Weaving Contracts (Pile and
+// Ground yarns that still need a Sizing Program).
+function get_items_from_weaving_contracts(frm) {
+    new frappe.ui.form.MultiSelectDialog({
+        doctype: "Weaving Contract",
+        target: frm,
+        setters: { weaver: null, construction: null },
+        add_filters_group: 1,
+        get_query() {
+            return { filters: { docstatus: 1, custom_status: "Open" } };
+        },
+        action(selections) {
+            if (!selections || !selections.length) { return; }
+            frappe.call({
+                method: "emadi_v3.emadi.events.create_sizing_program_from_weaving_contract.get_yarn_rows_for_contracts",
+                args: { weaving_contracts: selections },
+                freeze: true,
+                callback: function (r) {
+                    const rows = r.message || [];
+                    let added = 0;
+                    rows.forEach(function (row) {
+                        const dup = (frm.doc.yarn_items || []).some(x =>
+                            x.weaving_contract === row.weaving_contract && x.yarn_item === row.yarn_item && x.beam_item === row.beam_item);
+                        if (dup) { return; }
+                        const child = frm.add_child("yarn_items");
+                        ["weaving_contract", "finish_item", "yarn_item", "beam_item", "lbs_per_bag", "lbs_issue"].forEach(f => {
+                            child[f] = row[f];
+                        });
+                        if (frm.doc.warp_wastage_percent) { child.wastage_percent = frm.doc.warp_wastage_percent; }
+                        added++;
+                    });
+                    if (!frm.doc.weaving_contract && selections.length) { frm.set_value("weaving_contract", selections[0]); }
+                    if (!frm.doc.item_returnable && rows.length && rows[0].beam_item) { frm.set_value("item_returnable", rows[0].beam_item); }
+                    frm.refresh_field("yarn_items");
+                    cur_dialog && cur_dialog.hide();
+                    frappe.show_alert({ message: __("{0} row(s) added", [added]), indicator: "green" });
+                }
+            });
+        }
+    });
 }

@@ -73,8 +73,11 @@ frappe.ui.form.on('Sizing Receipt', {
 		frm.set_query('yarn_item', 'yarn_items', function () {
 			return { filters: { item_group: 'Yarn' } };
 		});
-		frm.set_query('finish_item', 'yarn_items', function () {
+		frm.set_query('fabric_construction', 'yarn_items', function () {
 			return { filters: { item_group: 'Fabric' } };
+		});
+		frm.set_query('beam_item', 'yarn_items', function () {
+			return { filters: { item_group: 'Beam' } };
 		});
 
 		// 2026-09-16 fix - see note above. Draft-only: never touches an
@@ -316,3 +319,46 @@ if (!window.__sizing_yarn_rows_loaded) {
     recalc_fields.forEach(f => { handlers[f] = function (frm, cdt, cdn) { window.sizing_yarn_recalc_row(frm, cdt, cdn); }; });
     frappe.ui.form.on("Sizing Program Yarn", handlers);
 }
+
+
+// ---------------------------------------------------------------------
+// Yarn Details rows: the same formulas the single-yarn receipt always used
+// (also applied on the server when the receipt is saved).
+// ---------------------------------------------------------------------
+function sizing_receipt_recalc_row(frm, cdt, cdn) {
+	const r = locals[cdt][cdn];
+	const lbs = flt(r.lbs), ends = flt(r.ends), length = flt(r.beem_length);
+	const actual = lbs ? (ends * length) / 768.10 / lbs : 0;
+	r.yarn_consumption_per_meter = (ends && actual) ? flt(((ends / 768.1) / actual).toFixed(5)) : 0;
+	r.warp_weight = (ends && actual) ? ends / 768.10 / actual : 0;
+	r.value_of_yarn = flt(r.yarn_item_rate) * lbs;
+	r.sizing_amount = flt(r.sizing_rate) * lbs;
+	r.beem_rate = flt(r.yarn_item_rate) + flt(r.sizing_rate);
+	r.final_cost_of_beam = r.value_of_yarn + r.sizing_amount;
+	frm.refresh_field('yarn_items');
+}
+
+function sizing_receipt_set_row_rate(frm, cdt, cdn) {
+	const r = locals[cdt][cdn];
+	if (!(r.yarn_item && frm.doc.source_warehouse)) { sizing_receipt_recalc_row(frm, cdt, cdn); return; }
+	frappe.call({
+		method: 'mjfsd_v3.loom_production.events.fetch_current_rate.fetch_current_rate',
+		args: { item_code: r.yarn_item, warehouse: frm.doc.source_warehouse },
+		callback: (res) => {
+			if (!res.exc && res.message !== undefined) { r.yarn_item_rate = res.message; }
+			sizing_receipt_recalc_row(frm, cdt, cdn);
+		}
+	});
+}
+
+const sizing_receipt_row_handlers = {
+	yarn_items_add: function (frm, cdt, cdn) {
+		locals[cdt][cdn].sizing_program = frm.doc.sizing_program;
+		frm.refresh_field('yarn_items');
+	},
+	yarn_item: sizing_receipt_set_row_rate
+};
+['ends', 'lbs', 'beem_length', 'sizing_rate', 'yarn_item_rate'].forEach(function (f) {
+	sizing_receipt_row_handlers[f] = sizing_receipt_recalc_row;
+});
+frappe.ui.form.on('Sizing Receipt Yarn', sizing_receipt_row_handlers);

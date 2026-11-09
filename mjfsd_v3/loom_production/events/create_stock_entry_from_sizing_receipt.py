@@ -1,3 +1,6 @@
+import collections
+import json
+
 import frappe
 from frappe.utils import flt
 
@@ -21,6 +24,9 @@ def create_manufacture_stock_entry(sizing_receipt, batches=None):
 	sizing charge - none of that was in the round 13 spec. Flag if any of
 	it needs to carry over to this automatic flow.
 	"""
+	if batches and sizing_receipt.get("yarn_items"):
+		return _create_entries_per_beam_item(sizing_receipt, batches)
+
 	sizing_program = frappe.get_doc("Sizing Program", sizing_receipt.sizing_program)
 	# allow_zero_valuation_rate mirrors the existing convention on Sizing
 	# Program's own Conversion checkbox (see its field description) - carried
@@ -32,7 +38,7 @@ def create_manufacture_stock_entry(sizing_receipt, batches=None):
 	se.stock_entry_type = "Beem Receipt Entry"
 	se.purpose = "Manufacture"
 	se.set_posting_time = 1
-	se.posting_date = sizing_program.date
+	se.posting_date = sizing_receipt.get("date") or sizing_program.date
 	se.sizing_program = sizing_receipt.sizing_program
 
 	# 2026-09-16 round 19 fix: "on sizing receipt stock entry, input rate
@@ -146,6 +152,85 @@ def create_manufacture_stock_entry(sizing_receipt, batches=None):
 	return se.name
 
 
+def _create_entries_per_beam_item(sizing_receipt, batches):
+	"""Yarn Details mode. ERPNext allows only ONE finished item per
+	Manufacture Stock Entry, so a receipt holding several Beam Items (Pile and
+	Ground) raises one Beem Receipt entry per Beam Item. Each one consumes
+	the yarn of its own rows and receives its beams, one row per beam
+	(Batch): the item's meters are split evenly over its beams and the rate
+	is that item's yarn + sizing cost / its meters. Names of all the entries
+	are kept in the receipt's stock_entries_json (the first also in
+	manufacture_stock_entry) so cancel removes every one."""
+	from mjfsd_v3.loom_production.events.sizing_yarn_rows import beam_item_groups
+
+	sizing_program = frappe.get_doc("Sizing Program", sizing_receipt.sizing_program)
+	allow_zero = 1 if sizing_program.conversion == 1 else 0
+
+	# batches were created in the order of beam_item_groups
+	per_item = collections.OrderedDict()
+	i = 0
+	for g in beam_item_groups(sizing_receipt):
+		entry = per_item.setdefault(g["item"], {"beams": [], "yarn": {}, "cost": 0.0, "lbs": 0.0})
+		for _n in range(g["beams"]):
+			entry["beams"].append((batches[i], g["net"] / g["beams"], g["cost"] / g["net"] if g["net"] else 0))
+			i += 1
+		entry["cost"] += g["cost"]
+		entry["lbs"] += g["lbs"]
+		for r in g["rows"]:
+			entry["yarn"][r.yarn_item] = entry["yarn"].get(r.yarn_item, 0) + flt(r.lbs)
+
+	names = []
+	for item, entry in per_item.items():
+		se = frappe.new_doc("Stock Entry")
+		se.stock_entry_type = "Beem Receipt Entry"
+		se.purpose = "Manufacture"
+		se.set_posting_time = 1
+		se.posting_date = sizing_receipt.get("date") or sizing_program.date
+		se.sizing_program = sizing_receipt.sizing_program
+		se.use_serial_batch_fields = 1
+
+		for yarn_item, yarn_lbs in entry["yarn"].items():
+			rate = flt(frappe.db.get_value("Item", yarn_item, "valuation_rate"))
+			se.append("items", {
+				"item_code": yarn_item,
+				"qty": yarn_lbs,
+				"uom": "Lbs",
+				"stock_uom": "Lbs",
+				"conversion_factor": 1,
+				"s_warehouse": SOURCE_WAREHOUSE,
+				"basic_rate": rate,
+				"basic_amount": rate * flt(yarn_lbs),
+				"set_basic_rate_manually": 1,
+				"allow_zero_valuation_rate": allow_zero,
+			})
+
+		per_lbs = entry["cost"] / entry["lbs"] if entry["lbs"] else 0
+		for batch, qty, rate in entry["beams"]:
+			se.append("items", {
+				"item_code": item,
+				"qty": qty,
+				"uom": "Meter",
+				"stock_uom": "Meter",
+				"conversion_factor": 1,
+				"t_warehouse": sizing_receipt.target_warehouse,
+				"is_finished_item": 1,
+				"basic_rate": rate,
+				"basic_amount": rate * qty,
+				"set_basic_rate_manually": 1,
+				"allow_zero_valuation_rate": allow_zero,
+				"custom_per_lbs_rate": per_lbs,
+				"batch_no": batch,
+				"use_serial_batch_fields": 1,
+			})
+
+		se.save(ignore_permissions=True)
+		se.submit()
+		names.append(se.name)
+
+	sizing_receipt.db_set("stock_entries_json", json.dumps(names), update_modified=False)
+	return names[0]
+
+
 def create_material_transfer_stock_entry(sizing_receipt):
 	"""Called from Sizing Receipt's on_submit, only when the Stock Return
 	Item table has rows. One Material Transfer entry covering every row,
@@ -158,7 +243,7 @@ def create_material_transfer_stock_entry(sizing_receipt):
 	se.stock_entry_type = "Material Transfer"
 	se.purpose = "Material Transfer"
 	se.set_posting_time = 1
-	se.posting_date = sizing_program.date
+	se.posting_date = sizing_receipt.get("date") or sizing_program.date
 	se.sizing_program = sizing_receipt.sizing_program
 
 	for row in sizing_receipt.stock_return_item:
@@ -181,9 +266,15 @@ def cancel_linked_stock_entries(sizing_receipt):
 	"""Called from Sizing Receipt's on_cancel. Cancels whichever of the two
 	tracked Stock Entries were actually created (Material Transfer is
 	conditional, so it may not exist)."""
-	for fieldname in ("manufacture_stock_entry", "material_transfer_stock_entry"):
-		se_name = sizing_receipt.get(fieldname)
-		if se_name and frappe.db.exists("Stock Entry", se_name):
+	extra = []
+	if sizing_receipt.get("stock_entries_json"):
+		try:
+			extra = json.loads(sizing_receipt.stock_entries_json)
+		except ValueError:
+			extra = []
+	names = [sizing_receipt.get("manufacture_stock_entry"), *extra, sizing_receipt.get("material_transfer_stock_entry")]
+	for se_name in dict.fromkeys(n for n in names if n):
+		if frappe.db.exists("Stock Entry", se_name):
 			se = frappe.get_doc("Stock Entry", se_name)
 			if se.docstatus == 1:
 				se.cancel()

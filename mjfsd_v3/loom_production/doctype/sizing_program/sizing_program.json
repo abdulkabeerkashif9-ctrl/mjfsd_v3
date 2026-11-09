@@ -184,13 +184,15 @@
    "fieldname": "fabric_construction",
    "fieldtype": "Link",
    "label": "Finish Item",
-   "options": "Item"
+   "options": "Item",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "item_returnable",
    "fieldtype": "Link",
    "label": "Item Name",
-   "options": "Item"
+   "options": "Item",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "source_warehouse",
@@ -213,7 +215,8 @@
    "fieldname": "lbs_issue",
    "fieldtype": "Float",
    "label": "LBS Issue",
-   "read_only_depends_on": "eval:(doc.yarn_items||[]).length"
+   "read_only_depends_on": "eval:(doc.yarn_items||[]).length",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "warping_beam",
@@ -242,7 +245,8 @@
    "fieldtype": "Float",
    "label": "Cone Weight",
    "precision": "2",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "0.0",
@@ -250,7 +254,8 @@
    "fieldtype": "Float",
    "label": "Wastage",
    "precision": "2",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "0.0",
@@ -259,7 +264,8 @@
    "fieldtype": "Float",
    "label": "Gross Meter",
    "precision": "2",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "0.0",
@@ -300,7 +306,8 @@
    "no_copy": 1,
    "precision": "2",
    "read_only": 1,
-   "allow_on_submit": 1
+   "allow_on_submit": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "column_break_r0xpw",
@@ -313,7 +320,8 @@
    "fieldtype": "Float",
    "label": "Yarn Consumption Per Meter",
    "precision": "2",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "0.0",
@@ -360,7 +368,8 @@
    "fieldname": "balance_yarn",
    "fieldtype": "Float",
    "label": "Balance Yarn",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "default": "0.0",
@@ -369,7 +378,8 @@
    "fieldtype": "Float",
    "label": "Bags Issue",
    "precision": "2",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "column_break_outputs2",
@@ -380,7 +390,8 @@
    "fieldname": "po_number",
    "fieldtype": "Data",
    "label": "PO Number",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "amended_from",
@@ -396,14 +407,16 @@
    "fieldtype": "Link",
    "label": "Weaving Contract",
    "options": "Weaving Contract",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "weaver",
    "fieldtype": "Link",
    "label": "Weaver",
    "options": "Customer",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "description": "2026-09-28 (feature v3) - new field, per your request (\"fetch ... sales order from sizing program\"). create_sizing_program_from_weaving_contract.py was already setting this on newly-created Sizing Programs, but the field itself didn't exist yet, so it was silently dropped - not persisted. Now real, hidden (mirrors weaving_contract/weaver above), and carried onto Sizing Receipt the same way.",
@@ -514,7 +527,7 @@
    "link_fieldname": "custom_sizing_program_gate_pass"
   }
  ],
- "modified": "2026-11-02 12:00:00.000000",
+ "modified": "2026-11-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Loom Production",
  "name": "Sizing Program",
