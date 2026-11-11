@@ -551,10 +551,19 @@ def _consumption_rows(row, commercial):
 		beam_type = (r.get("for") or "").strip()
 		if beam_type in ("Pile", "Ground"):
 			continue
+		yarn_wh = row.get(f"{beam_type.lower()}_warehouse") or yarn_default_warehouse(beam_type)
+		if not yarn_wh:
+			frappe.throw(
+				"Row {}: no warehouse for {} yarn ({}). Pick the {} Warehouse on the row, or set "
+				"<b>{} Warehouse</b> in <a href='/app/emadi-settings'>Emadi Settings</a> (Daily Loom Production).".format(
+					row.idx, beam_type or "Weft", r["yarn_count"], beam_type or "Weft", beam_type or "Weft"
+				),
+				title="Warehouse missing",
+			)
 		out.append({
 			"item_code": r["yarn_count"],
 			"qty": r["per_pc"] * finish_qty,
-			"s_warehouse": row.get(f"{beam_type.lower()}_warehouse") or yarn_default_warehouse(beam_type),
+			"s_warehouse": yarn_wh,
 			"batch_no": None,
 			"rate": None,
 			"lbs_factor": r["ratio"] / 100 * (1 + r["weaving_wastage"] / 100),
