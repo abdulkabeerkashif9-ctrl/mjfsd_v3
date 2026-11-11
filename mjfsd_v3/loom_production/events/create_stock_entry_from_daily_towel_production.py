@@ -69,7 +69,13 @@ from frappe.utils import cint, flt, nowtime
 #      the resolved Sizing Receipt nor a rate was ever persisted from the
 #      dialog (only item_code/qty/warehouse are, via the three existing
 #      Data fields).
-YARN_DEFAULT_WAREHOUSE = "Stores - PT"
+
+
+def yarn_default_warehouse(kind="weft"):
+	"""Default warehouse for yarn rows: Emadi Settings > Daily Loom Production (Weft / Fancy); None if not set."""
+	from mjfsd_v3.loom_production.warehouse_defaults import default_warehouse
+	return default_warehouse(f"dlp_{(kind or 'weft').lower()}_warehouse") or default_warehouse("dlp_weft_warehouse")
+
 
 # DELIMITER matches the parent daily_towel_production.js's RM_DELIMITER -
 # keep both in sync if this ever changes.
@@ -315,7 +321,7 @@ def get_raw_materials_for_row(sales_order=None, item_code=None, finish_qty=0, we
 				"group": "Yarn Items",
 				"qty": qty,
 				"reference": None,
-				"default_warehouse": YARN_DEFAULT_WAREHOUSE,
+				"default_warehouse": yarn_default_warehouse(),
 				"ratio": flt(m.get("ratio")),
 				"weaving_wastage": weaving_wastage,
 				# Round 19: not set for the Yarn Items group - Kabeer's
@@ -378,7 +384,7 @@ def _get_contract_raw_materials(weaving_contract, finish_qty):
 				"group": "Yarn Items",
 				"qty": yarn_required_per_pc * finish_qty,
 				"reference": None,
-				"default_warehouse": YARN_DEFAULT_WAREHOUSE,
+				"default_warehouse": yarn_default_warehouse(),
 				"rate": None,
 				"ratio": flt(m.ratio),
 				"weaving_wastage": flt(m.get("weaving_wastage")),
@@ -548,7 +554,7 @@ def _consumption_rows(row, commercial):
 		out.append({
 			"item_code": r["yarn_count"],
 			"qty": r["per_pc"] * finish_qty,
-			"s_warehouse": row.get(f"{beam_type.lower()}_warehouse") or YARN_DEFAULT_WAREHOUSE,
+			"s_warehouse": row.get(f"{beam_type.lower()}_warehouse") or yarn_default_warehouse(beam_type),
 			"batch_no": None,
 			"rate": None,
 			"lbs_factor": r["ratio"] / 100 * (1 + r["weaving_wastage"] / 100),

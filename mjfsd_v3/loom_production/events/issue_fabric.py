@@ -390,18 +390,21 @@ def _recompute_dyeing_contract_issue_totals(dc_name):
 	)
 
 
-GATE_PASS_WAREHOUSE = "Finished Goods - PT"
+# Gate Pass source: Emadi Settings > Dyeing Source Warehouse (no hardcoded names).
 
 
 @frappe.whitelist()
 def create_gate_pass(dyeing_contract):
 	"""Dyeing Contract > Gate Pass: an unsaved Material Transfer Stock Entry with
 	every contract row still to be sent (AB Qty less what is already issued),
-	taken from "Finished Goods - PT" and tagged to the contract rows so Issued
+	taken from the Dyeing Source Warehouse (Emadi Settings) and tagged to the contract rows so Issued
 	Qty updates when the Stock Entry is submitted. Opened for review, not saved."""
 	dc = frappe.get_doc("Dyeing Contract", dyeing_contract)
 	if dc.docstatus != 1:
 		frappe.throw(_("Dyeing Contract must be submitted before a Gate Pass can be made."))
+
+	from mjfsd_v3.loom_production.warehouse_defaults import pick
+	gate_pass_warehouse = pick(None, "dyeing_source_warehouse")
 
 	se = frappe.new_doc("Stock Entry")
 	se.stock_entry_type = "Material Transfer"
@@ -420,7 +423,7 @@ def create_gate_pass(dyeing_contract):
 		se.append(
 			"items",
 			{
-				"s_warehouse": GATE_PASS_WAREHOUSE,
+				"s_warehouse": gate_pass_warehouse,
 				"t_warehouse": dc.target_warehouse,
 				"item_code": row.item,
 				"qty": remaining,

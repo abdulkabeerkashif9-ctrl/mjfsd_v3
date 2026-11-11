@@ -4,9 +4,14 @@ from frappe.model.document import Document
 from frappe.model.naming import  make_autoname
 from mjfsd_v3.loom_production.events.utils import get_doctypes_by_field
 from mjfsd_v3.loom_production.events import sizing_yarn_rows
+from mjfsd_v3.loom_production import warehouse_defaults
 
 class SizingProgram(Document):
 	def validate(self):
+		warehouse_defaults.fill_empty(self, {
+			"source_warehouse": "sizing_program_source_warehouse",
+			"target_warehouse": "sizing_program_target_warehouse",
+		})
 		sizing_yarn_rows.validate_program(self)
 
 	def onload(self):

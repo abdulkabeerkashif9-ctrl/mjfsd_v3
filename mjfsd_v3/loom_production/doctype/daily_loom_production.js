@@ -224,10 +224,13 @@ function refresh_material_fields(frm, cdt, cdn) {
 				frappe.model.set_value(cdt, cdn, 'has_' + key, types[key]);
 			});
 			// yarn goes out of the usual yarn store unless changed
-			['weft', 'fancy'].forEach(function (key) {
-				if (types[key] && !row[key + '_warehouse']) {
-					frappe.model.set_value(cdt, cdn, key + '_warehouse', 'Stores - PT');
-				}
+			// yarn warehouses come from Emadi Settings > Daily Loom Production (no hardcoded names)
+			frappe.xcall('mjfsd_v3.loom_production.warehouse_defaults.get_defaults').then(function (d) {
+				['weft', 'fancy'].forEach(function (key) {
+					if (types[key] && !row[key + '_warehouse'] && d['dlp_' + key + '_warehouse']) {
+						frappe.model.set_value(cdt, cdn, key + '_warehouse', d['dlp_' + key + '_warehouse']);
+					}
+				});
 			});
 		}
 	});

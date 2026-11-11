@@ -129,12 +129,15 @@ function open_weaving_contract_dialog(frm) {
 							// (create_weaving_receipt_from_weaving_contract.py)
 							// - only filled in if not already set, so it
 							// never overwrites a value you picked yourself.
-							if (!frm.doc.source_warehouse) {
-								frm.set_value("source_warehouse", "Supplier - PT");
-							}
-							if (!frm.doc.target_warehouse) {
-								frm.set_value("target_warehouse", "Finished Goods - PT");
-							}
+							// now read from Emadi Settings > Weaving Receipt (no hardcoded names)
+							frappe.xcall("mjfsd_v3.loom_production.warehouse_defaults.get_defaults").then((d) => {
+								if (!frm.doc.source_warehouse && d.weaving_receipt_source_warehouse) {
+									frm.set_value("source_warehouse", d.weaving_receipt_source_warehouse);
+								}
+								if (!frm.doc.target_warehouse && d.weaving_receipt_target_warehouse) {
+									frm.set_value("target_warehouse", d.weaving_receipt_target_warehouse);
+								}
+							});
 
 							dialog.hide();
 						}

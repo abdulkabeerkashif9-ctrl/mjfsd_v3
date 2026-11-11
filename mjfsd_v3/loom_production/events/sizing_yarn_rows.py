@@ -6,6 +6,7 @@ those rows share one physical beam (different finish items / Weaving
 Contracts on the same beam). A Sizing Receipt is raised per shared beam.
 """
 import frappe
+from mjfsd_v3.loom_production.warehouse_defaults import default_warehouse
 from frappe import _
 from frappe.utils import cint, flt
 
@@ -152,8 +153,9 @@ def make_sizing_receipt(sizing_program, sizing_beam=None, sizing_beams=None):
 	issued = get_issued_meters([r.name for r in rows])
 	rec = frappe.new_doc("Sizing Receipt")
 	rec.sizing_program = sp.name
-	rec.source_warehouse = sp.source_warehouse
-	rec.target_warehouse = sp.target_warehouse
+	# Emadi Settings > Sizing Receipt warehouses first; the program's own only if those are not set
+	rec.source_warehouse = default_warehouse("sizing_receipt_source_warehouse") or sp.source_warehouse
+	rec.target_warehouse = default_warehouse("sizing_receipt_target_warehouse") or sp.target_warehouse
 	rec.sizing_name = sp.supplier
 	rec.item = beam_item
 	rec.type = "Beam"

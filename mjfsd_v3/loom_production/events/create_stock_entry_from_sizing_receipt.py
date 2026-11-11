@@ -4,17 +4,22 @@ import json
 import frappe
 from frappe.utils import flt
 
-# Fixed source warehouse for both entries created from a Sizing Receipt -
-# see round 13 notes: "the source warehouse of raw item will be
-# 'Supplier - PT'" and the Material Transfer entry is "from same source
-# warehouse" as that one, so both legs read from this single constant
-# rather than any per-document field.
-SOURCE_WAREHOUSE = "Supplier - PT"
+from mjfsd_v3.loom_production.warehouse_defaults import pick
+
+
+def _source_warehouse(sizing_receipt):
+	"""Warehouse the yarn is taken from for every entry made from a Sizing Receipt: the receipt's own Source Warehouse,
+	else Emadi Settings > Sizing Receipt Source Warehouse. Never a fixed name."""
+	return pick(sizing_receipt.get("source_warehouse"), "sizing_receipt_source_warehouse", "Source Warehouse")
+
+
+def _target_warehouse(sizing_receipt):
+	return pick(sizing_receipt.get("target_warehouse"), "sizing_receipt_target_warehouse", "Target Warehouse")
 
 
 def create_manufacture_stock_entry(sizing_receipt, batches=None):
 	"""Called from Sizing Receipt's on_submit. Consumes the Yarn Item (Lbs)
-	from SOURCE_WAREHOUSE and receives the Beam item (Meter) into the
+	from the Sizing Receipt's Source Warehouse and receives the Beam item (Meter) into the
 	Sizing Receipt's own Target Warehouse.
 
 	Note: unlike the old (now-removed) manual "Make Stock Entry" button
@@ -26,6 +31,9 @@ def create_manufacture_stock_entry(sizing_receipt, batches=None):
 	"""
 	if batches and sizing_receipt.get("yarn_items"):
 		return _create_entries_per_beam_item(sizing_receipt, batches)
+
+	source_warehouse = _source_warehouse(sizing_receipt)
+	target_warehouse = _target_warehouse(sizing_receipt)
 
 	sizing_program = frappe.get_doc("Sizing Program", sizing_receipt.sizing_program)
 	# allow_zero_valuation_rate mirrors the existing convention on Sizing
@@ -44,7 +52,7 @@ def create_manufacture_stock_entry(sizing_receipt, batches=None):
 	# 2026-09-16 round 19 fix: "on sizing receipt stock entry, input rate
 	# is still 0" (your words) - this row never set basic_rate at all, so
 	# it relied entirely on Frappe's own warehouse-ledger valuation for
-	# the Yarn Item in SOURCE_WAREHOUSE. Same root cause already found
+	# the Yarn Item in the source warehouse. Same root cause already found
 	# twice elsewhere this session (Sizing Receipt's own Yarn Item Rate
 	# field, round 16; this same pattern is why fetch_current_rate.py
 	# reads Item.valuation_rate directly): stock-ledger/Bin valuation
@@ -63,7 +71,7 @@ def create_manufacture_stock_entry(sizing_receipt, batches=None):
 			"uom": "Lbs",
 			"stock_uom": "Lbs",
 			"conversion_factor": 1,
-			"s_warehouse": SOURCE_WAREHOUSE,
+			"s_warehouse": source_warehouse,
 			"basic_rate": yarn_item_rate,
 			"basic_amount": yarn_item_rate * flt(yarn_lbs),
 			"set_basic_rate_manually": 1,
@@ -118,7 +126,7 @@ def create_manufacture_stock_entry(sizing_receipt, batches=None):
 		"uom": "Meter",
 		"stock_uom": "Meter",
 		"conversion_factor": 1,
-		"t_warehouse": sizing_receipt.target_warehouse,
+		"t_warehouse": target_warehouse,
 		"is_finished_item": 1,
 		"basic_rate": basic_rate,
 		"basic_amount": finish_amount,
@@ -163,6 +171,9 @@ def _create_entries_per_beam_item(sizing_receipt, batches):
 	manufacture_stock_entry) so cancel removes every one."""
 	from mjfsd_v3.loom_production.events.sizing_yarn_rows import beam_item_groups
 
+	source_warehouse = _source_warehouse(sizing_receipt)
+	target_warehouse = _target_warehouse(sizing_receipt)
+
 	sizing_program = frappe.get_doc("Sizing Program", sizing_receipt.sizing_program)
 	allow_zero = 1 if sizing_program.conversion == 1 else 0
 
@@ -197,7 +208,7 @@ def _create_entries_per_beam_item(sizing_receipt, batches):
 				"uom": "Lbs",
 				"stock_uom": "Lbs",
 				"conversion_factor": 1,
-				"s_warehouse": SOURCE_WAREHOUSE,
+				"s_warehouse": source_warehouse,
 				"basic_rate": rate,
 				"basic_amount": rate * flt(yarn_lbs),
 				"set_basic_rate_manually": 1,
@@ -212,7 +223,7 @@ def _create_entries_per_beam_item(sizing_receipt, batches):
 				"uom": "Meter",
 				"stock_uom": "Meter",
 				"conversion_factor": 1,
-				"t_warehouse": sizing_receipt.target_warehouse,
+				"t_warehouse": target_warehouse,
 				"is_finished_item": 1,
 				"basic_rate": rate,
 				"basic_amount": rate * qty,
@@ -234,10 +245,11 @@ def _create_entries_per_beam_item(sizing_receipt, batches):
 def create_material_transfer_stock_entry(sizing_receipt):
 	"""Called from Sizing Receipt's on_submit, only when the Stock Return
 	Item table has rows. One Material Transfer entry covering every row,
-	from SOURCE_WAREHOUSE (same source as the Manufacture entry above) to
+	from the Source Warehouse (same source as the Manufacture entry above) to
 	each row's own Target Warehouse.
 	"""
 	sizing_program = frappe.get_doc("Sizing Program", sizing_receipt.sizing_program)
+	source_warehouse = _source_warehouse(sizing_receipt)
 
 	se = frappe.new_doc("Stock Entry")
 	se.stock_entry_type = "Material Transfer"
@@ -253,7 +265,7 @@ def create_material_transfer_stock_entry(sizing_receipt):
 			"uom": "Lbs",
 			"stock_uom": "Lbs",
 			"conversion_factor": 1,
-			"s_warehouse": SOURCE_WAREHOUSE,
+			"s_warehouse": source_warehouse,
 			"t_warehouse": row.target_warehouse,
 		})
 

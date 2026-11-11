@@ -2,6 +2,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+from mjfsd_v3.loom_production.warehouse_defaults import pick
+
 # 2026-09-28 fix - "Sizing Program Gate Pass (Material Transfer Stock
 # Entry) Source Warehouse = Stores - PT, Target Warehouse = Supplier - PT,
 # Qty not calculated correctly. Qty = bags_issue (from sizing program) *
@@ -13,8 +15,7 @@ from frappe.utils import flt
 # pattern as Issue Yarn's own SOURCE_WAREHOUSE/TARGET_WAREHOUSE) and the
 # qty formula given.
 
-SOURCE_WAREHOUSE = "Stores - PT"
-TARGET_WAREHOUSE = "Supplier - PT"
+# Source/Target: the Sizing Program's own warehouses, else Emadi Settings > Sizing Program (no hardcoded names).
 
 
 @frappe.whitelist()
@@ -23,11 +24,9 @@ def open_stock_entry(sizing_program_name):
 	given Sizing Program. Draft only - user reviews and submits it
 	himself, same pattern as every other "prefill, open the form" button
 	in this project."""
-	for wh in (SOURCE_WAREHOUSE, TARGET_WAREHOUSE):
-		if not frappe.db.exists("Warehouse", wh):
-			frappe.throw(_("Warehouse {0} doesn't exist - check the exact name/spelling.").format(wh))
-
 	sp = frappe.get_doc("Sizing Program", sizing_program_name)
+	SOURCE_WAREHOUSE = pick(sp.get("source_warehouse"), "sizing_program_source_warehouse", "Source Warehouse")
+	TARGET_WAREHOUSE = pick(sp.get("target_warehouse"), "sizing_program_target_warehouse", "Target Warehouse")
 	item = frappe.get_doc("Item", sp.item)
 
 	se = frappe.new_doc("Stock Entry")

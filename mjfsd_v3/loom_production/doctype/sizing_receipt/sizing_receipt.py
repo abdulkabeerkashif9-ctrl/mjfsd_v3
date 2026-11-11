@@ -17,6 +17,7 @@ from mjfsd_v3.loom_production.events.sizing_receipt_batches import (
 	validate_beam_no,
 )
 from mjfsd_v3.loom_production.events import sizing_yarn_rows
+from mjfsd_v3.loom_production import warehouse_defaults
 
 
 class SizingReceipt(Document):
@@ -24,6 +25,10 @@ class SizingReceipt(Document):
 		validate_before_submit(self)
 
 	def validate(self):
+		warehouse_defaults.fill_empty(self, {
+			"source_warehouse": "sizing_receipt_source_warehouse",
+			"target_warehouse": "sizing_receipt_target_warehouse",
+		})
 		sizing_yarn_rows.apply_receipt_totals(self)
 		validate_beam_no(self)
 		# Weaving Contract reference always follows the Sizing Program, so a

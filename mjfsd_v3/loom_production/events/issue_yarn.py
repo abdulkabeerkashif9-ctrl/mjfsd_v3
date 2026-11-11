@@ -1,6 +1,7 @@
 import json
 
 import frappe
+from mjfsd_v3.loom_production.warehouse_defaults import pick
 from frappe import _
 from frappe.utils import flt
 
@@ -33,8 +34,7 @@ from frappe.utils import flt
 # (see claude/dyeing-workflow.md, 2026-09-16 follow-up). No separate
 # on_submit/on_cancel hooks.py entries needed for this one at all.
 
-SOURCE_WAREHOUSE = "Stores - PT"
-TARGET_WAREHOUSE = "Supplier - PT"
+# Source/Target come from Emadi Settings > Yarn Issue to Weaver (no hardcoded names).
 
 
 @frappe.whitelist()
@@ -46,9 +46,8 @@ def issue_yarn(weaving_contract, rows):
 	if isinstance(rows, str):
 		rows = json.loads(rows)
 
-	for wh in (SOURCE_WAREHOUSE, TARGET_WAREHOUSE):
-		if not frappe.db.exists("Warehouse", wh):
-			frappe.throw(_("Warehouse {0} doesn't exist - check the exact name/spelling.").format(wh))
+	SOURCE_WAREHOUSE = pick(None, "yarn_issue_source_warehouse")
+	TARGET_WAREHOUSE = pick(None, "yarn_issue_target_warehouse")
 
 	wc = frappe.get_doc("Weaving Contract", weaving_contract)
 	if wc.docstatus != 1:
