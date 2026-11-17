@@ -5,6 +5,8 @@ Sizing Program Yarn). One Sizing Beam value can be entered on several rows -
 those rows share one physical beam (different finish items / Weaving
 Contracts on the same beam). A Sizing Receipt is raised per shared beam.
 """
+import re
+
 import frappe
 from mjfsd_v3.loom_production.warehouse_defaults import default_warehouse
 from frappe import _
@@ -17,6 +19,61 @@ def has_rows(doc):
 	return bool(doc.get("yarn_items"))
 
 
+def parse_meters(text):
+	"""'3000, 2900' -> [3000.0, 2900.0] (commas, semicolons or spaces); anything that is not a positive number is an error."""
+	out = []
+	for part in re.split(r"[,;\s]+", str(text or "").strip()):
+		if not part:
+			continue
+		try:
+			value = float(part)
+		except ValueError:
+			frappe.throw(_("Meters per Beam: '{0}' is not a number. Write them like 3000, 2900.").format(part))
+		if value <= 0:
+			frappe.throw(_("Meters per Beam: every beam needs more than 0 meters."))
+		out.append(value)
+	return out
+
+
+def g_fmt(value):
+	return "{:g}".format(round(flt(value), 3))
+
+
+def format_meters(values):
+	return ", ".join("{:g}".format(round(v, 3)) for v in values)
+
+
+def planned_beam_count(rows, beam_value):
+	"""Beams a Beam No is wound on: the rows' No of Beams; rows made before that field existed used the Sizing Beam value as the count."""
+	return max((cint(r.get("beam")) for r in rows), default=0) or cint(beam_value) or 1
+
+
+def _beam_for(beam_item):
+	for beam_for in ("Pile", "Ground"):
+		if (beam_item or "").startswith(f"BEAM-{beam_for}-"):
+			return beam_for
+	return None
+
+
+def contract_lbs(row, doc, cache):
+	"""LBS the Weaving Contract mentions for this row's yarn: the contract's BOM Items rows of the same Finish Item, yarn
+	(and Pile / Ground when the row's Beam Item says which) added together."""
+	if not (row.get("weaving_contract") and row.get("yarn_item")):
+		return 0
+	if row.weaving_contract not in cache:
+		cache[row.weaving_contract] = frappe.get_doc("Weaving Contract", row.weaving_contract)
+	wc = cache[row.weaving_contract]
+	finish = row.get("finish_item") or wc.get("construction")
+	beam_for = _beam_for(row.get("beam_item") or doc.get("item_returnable"))
+	return sum(
+		flt(b.get("yarn_qty"))
+		for b in wc.bom_items or []
+		if (b.get("yarn_count") or "").strip() == (row.yarn_item or "").strip()
+		and (not finish or (b.get("finish_item") or wc.get("construction")) == finish)
+		and (not beam_for or b.get("for") == beam_for)
+	)
+
+
 def calculate_rows(doc, default_wastage=None):
 	"""Server-side (authoritative) version of the row formulas that
 	sizing_program.js / sizing_receipt.js preview live."""
@@ -24,7 +81,9 @@ def calculate_rows(doc, default_wastage=None):
 	for r in doc.get("stock_return_item") or []:
 		returns[r.yarn_item] = returns.get(r.yarn_item, 0) + flt(r.qty_lbs)
 
+	wc_cache = {}
 	for idx, row in enumerate(doc.get("yarn_items") or [], 1):
+		row.weaving_contract_lbs = contract_lbs(row, doc, wc_cache)
 		if not flt(row.lbs_per_bag):
 			row.lbs_per_bag = 100
 		if row.wastage_percent in (None, "") and default_wastage:
@@ -36,6 +95,8 @@ def calculate_rows(doc, default_wastage=None):
 			(flt(row.ends) / CONSTANT) / flt(row.yarn_count) if flt(row.yarn_count) else 0
 		)
 		row.lbs = flt(row.net_meter) * row.yarn_consumption_per_meter
+		# LBS Issue = (Net Meter x Ends) / 768.1 / Yarn Count
+		row.lbs_issue = row.lbs
 		row.wastage = row.lbs * wpct / 100
 		row.gross_meter = flt(row.net_meter) * (1 + wpct / 100)
 		row.bags_issue = (flt(row.lbs_issue) + row.wastage) / (flt(row.lbs_per_bag) or 100)
@@ -87,7 +148,7 @@ def validate_program(doc):
 		if not row.yarn_item:
 			frappe.throw(_("Row {0}: Yarn Item is required.").format(row.idx))
 		if not flt(row.sizing_beam):
-			frappe.throw(_("Row {0}: Sizing Beam is required. Use the same value on rows that share a beam.").format(row.idx))
+			frappe.throw(_("Row {0}: Beam No is required. Use the same Beam No on rows that share a beam.").format(row.idx))
 	doc.lbs_issue = sum(flt(r.lbs_issue) for r in doc.yarn_items)
 	if not doc.get("weaving_contract"):
 		doc.weaving_contract = next((r.weaving_contract for r in doc.yarn_items if r.weaving_contract), None)
@@ -118,23 +179,27 @@ def get_beam_groups(sizing_program):
 	out = []
 	for beam, rows in sorted(beam_groups(sp).items()):
 		remaining = sum(flt(r.net_meter) - issued.get(r.name, 0) for r in rows)
+		count = planned_beam_count(rows, beam)
 		out.append(
 			{
 				"sizing_beam": beam,
 				"rows": len(rows),
 				"finish_items": ", ".join(sorted({r.finish_item for r in rows if r.finish_item})),
 				"remaining": remaining,
+				"beams": count,
+				"default_meters": format_meters([remaining / count] * count) if remaining > 0 else "",
 			}
 		)
 	return out
 
 
 @frappe.whitelist()
-def make_sizing_receipt(sizing_program, sizing_beam=None, sizing_beams=None):
-	"""Unsaved Sizing Receipt for one OR SEVERAL shared beams (`sizing_beams`
-	is a JSON list of Sizing Beam values; `sizing_beam` a single one). Carries
-	every program row with one of those Sizing Beams (net meter = what is
-	still left on the row)."""
+def make_sizing_receipt(sizing_program, sizing_beam=None, sizing_beams=None, beam_meters=None):
+	"""Unsaved Sizing Receipt for one OR SEVERAL Beam Nos (`sizing_beams` is a JSON list of
+	Beam No values; `sizing_beam` a single one). Carries every program row with one of those
+	Beam Nos. `beam_meters` is an optional JSON object {Beam No: "3000, 2900"} with the meters
+	actually received on each beam of that Beam No; without it the balance of the Beam No is
+	split evenly over its No of Beams."""
 	import json
 
 	sp = frappe.get_doc("Sizing Program", sizing_program)
@@ -144,7 +209,7 @@ def make_sizing_receipt(sizing_program, sizing_beam=None, sizing_beams=None):
 		beams = {flt(sizing_beam)}
 	rows = [r for r in sp.yarn_items if flt(r.sizing_beam) in beams]
 	if not rows:
-		frappe.throw(_("No rows with the selected Sizing Beam in {0}.").format(sp.name))
+		frappe.throw(_("No rows with the selected Beam No in {0}.").format(sp.name))
 	# Pile and Ground beams (different Beam Items) can be received together.
 	beam_item = next((r.get("beam_item") or sp.item_returnable for r in rows), None)
 	if not any(r.get("beam_item") or sp.item_returnable for r in rows):
@@ -160,36 +225,66 @@ def make_sizing_receipt(sizing_program, sizing_beam=None, sizing_beams=None):
 	rec.item = beam_item
 	rec.type = "Beam"
 	rec.date = frappe.utils.nowdate()
+	entered = {}
+	if beam_meters:
+		raw = json.loads(beam_meters) if isinstance(beam_meters, str) else beam_meters
+		entered = {flt(k): v for k, v in (raw or {}).items()}
+
+	groups = {}
 	for r in rows:
-		left = flt(r.net_meter) - issued.get(r.name, 0)
-		if left <= 0.0001:
+		groups.setdefault(flt(r.sizing_beam), []).append(r)
+
+	for beam, grows in sorted(groups.items()):
+		lefts = {r.name: max(flt(r.net_meter) - issued.get(r.name, 0), 0) for r in grows}
+		total_left = sum(lefts.values())
+		if total_left <= 0.0001:
 			continue
-		share = left / flt(r.net_meter) if flt(r.net_meter) else 1
-		rec.append(
-			"yarn_items",
-			{
-				"sales_order": (
-					frappe.db.get_value("Weaving Contract", r.weaving_contract, "sales_order")
-					if r.weaving_contract
-					else None
+		if entered.get(beam) not in (None, ""):
+			meters = parse_meters(entered[beam])
+			if not meters:
+				frappe.throw(_("Beam No {0}: enter the meters of each beam, e.g. 3000, 2900.").format(g_fmt(beam)))
+		else:
+			count = planned_beam_count(grows, beam)
+			meters = [total_left / count] * count
+		received = sum(meters)
+		if received > total_left + 0.5:
+			frappe.throw(
+				_("Beam No {0}: {1} m entered but only {2} m is left to receive.").format(
+					g_fmt(beam), g_fmt(received), g_fmt(total_left)
 				)
-				or sp.get("sales_order"),
-				"beam_item": r.get("beam_item") or sp.item_returnable,
-				"yarn_item": r.yarn_item,
-				"yarn_count": r.yarn_count,
-				"beam_no": cint(r.sizing_beam),
-				"beem_length": left,
-				"ends": r.ends,
-				"lbs": flt(r.lbs) * share,
-				"sizing_rate": sp.sizing_rate,
-				"sizing_program": sp.name,
-				"fabric_construction": r.finish_item,
-				"sizing_beam": r.sizing_beam,
-				"sizing_program_row": r.name,
-			},
-		)
+			)
+		for r in grows:
+			left = lefts[r.name]
+			if left <= 0.0001:
+				continue
+			length = received * left / total_left  # rows sharing the beam split the received meters by what they had left
+			share = length / flt(r.net_meter) if flt(r.net_meter) else 1
+			rec.append(
+				"yarn_items",
+				{
+					"sales_order": (
+						frappe.db.get_value("Weaving Contract", r.weaving_contract, "sales_order")
+						if r.weaving_contract
+						else None
+					)
+					or sp.get("sales_order"),
+					"beam_item": r.get("beam_item") or sp.item_returnable,
+					"yarn_item": r.yarn_item,
+					"yarn_count": r.yarn_count,
+					"beam_no": len(meters),
+					"beam_meters": format_meters(meters),
+					"beem_length": length,
+					"ends": r.ends,
+					"lbs": flt(r.lbs) * share,
+					"sizing_rate": sp.sizing_rate,
+					"sizing_program": sp.name,
+					"fabric_construction": r.finish_item,
+					"sizing_beam": r.sizing_beam,
+					"sizing_program_row": r.name,
+				},
+			)
 	if not rec.get("yarn_items"):
-		frappe.throw(_("Everything on the selected Sizing Beam(s) is already received."))
+		frappe.throw(_("Everything on the selected Beam No(s) is already received."))
 	apply_receipt_totals(rec)
 	return rec
 
@@ -225,17 +320,30 @@ def apply_receipt_totals(doc):
 			r.beam_item = doc.get("item")
 		if not r.get("yarn_item"):
 			frappe.throw(_("Row {0}: Yarn Item is required.").format(r.idx))
+		if r.get("beam_meters"):
+			r.beam_no = len(parse_meters(r.beam_meters))      # number of meters written = number of beams
 		if not cint(r.beam_no):
-			r.beam_no = cint(r.sizing_beam) or 1
-		if flt(r.sizing_beam) and cint(r.beam_no) > flt(r.sizing_beam):
+			r.beam_no = planned_beam_count([r], r.sizing_beam)
+		planned = planned_beam_count(
+			[frappe._dict(frappe.db.get_value("Sizing Program Yarn", r.sizing_program_row, ["beam"], as_dict=True) or {})],
+			r.sizing_beam,
+		) if r.get("sizing_program_row") else cint(r.sizing_beam)
+		if planned and cint(r.beam_no) > planned:
 			frappe.throw(
-				_("Row {0}: Beam No ({1}) cannot be greater than the Sizing Beam ({2}).").format(
-					r.idx, cint(r.beam_no), flt(r.sizing_beam)
+				_("Row {0}: {1} beams received, but the Sizing Program planned {2} for this Beam No.").format(
+					r.idx, cint(r.beam_no), planned
 				)
 			)
 		calculate_receipt_row(r)
 
 	groups = beam_item_groups(doc)
+	for g in groups:
+		if g.get("meters") and abs(sum(g["meters"]) - g["net"]) > 0.5:
+			frappe.throw(
+				_("Meters per Beam ({0}) add up to {1} m but the Beam Length of these rows is {2} m. Change one of them.").format(
+					format_meters(g["meters"]), g_fmt(sum(g["meters"])), g_fmt(g["net"])
+				)
+			)
 	if groups and doc.get("item") not in [g["item"] for g in groups]:
 		doc.item = groups[0]["item"]
 
@@ -282,9 +390,12 @@ def beam_item_groups(doc):
 		item = r.get("beam_item") or doc.get("item")
 		key = (cint(r.set_no), item, flt(r.sizing_beam))
 		g = groups.setdefault(
-			key, {"item": item, "set_no": cint(r.set_no), "beams": 0, "net": 0.0, "lbs": 0.0, "cost": 0.0, "rows": []}
+			key, {"item": item, "set_no": cint(r.set_no), "beams": 0, "net": 0.0, "lbs": 0.0, "cost": 0.0, "rows": [], "meters": []}
 		)
 		g["beams"] = max(g["beams"], cint(r.beam_no), 1)
+		if r.get("beam_meters") and not g.get("meters"):
+			g["meters"] = parse_meters(r.beam_meters)
+			g["beams"] = len(g["meters"])
 		g["net"] += flt(r.beem_length)
 		g["lbs"] += flt(r.lbs)
 		g["cost"] += flt(r.final_cost_of_beam)

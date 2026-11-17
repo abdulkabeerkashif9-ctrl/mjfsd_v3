@@ -720,17 +720,20 @@ function compute_yarn_values(frm, cdt, cdn) {
         frappe.model.set_value(cdt, cdn, 'wastage_amount', wastage_amount);
     }
 
-// Multi finish item / yarn mode: one Sizing Receipt per shared Sizing Beam
-// (rows that carry the same Sizing Beam value go on the same receipt).
+// Multi finish item / yarn mode: one Sizing Receipt for one or several Beam Nos.
+// The pop-up asks, for every Beam No, how many meters each beam really gave:
+//   Beam No 1  balance 3000 m   ->  Meters per beam:  3000
+//   Beam No 2  balance 3000 m   ->  Meters per beam:  2900
+// (several beams of one Beam No: write them with commas, e.g. 3000, 2900).
 function create_receipt_for_shared_beam(frm) {
     if (frm.is_new() || frm.is_dirty()) {
         frappe.msgprint(__('Please save the Sizing Program first.'));
         return;
     }
-    const open_receipt = function (beams) {
+    const open_receipt = function (beams, meters) {
         frappe.call({
             method: "mjfsd_v3.loom_production.events.sizing_yarn_rows.make_sizing_receipt",
-            args: { sizing_program: frm.doc.name, sizing_beams: JSON.stringify(beams) },
+            args: { sizing_program: frm.doc.name, sizing_beams: JSON.stringify(beams), beam_meters: JSON.stringify(meters) },
             freeze: true,
             callback: function (r) {
                 if (!r.exc && r.message) {
@@ -746,27 +749,42 @@ function create_receipt_for_shared_beam(frm) {
         callback: function (r) {
             const groups = (r.message || []).filter(g => flt(g.remaining) > 0.0001);
             if (!groups.length) {
-                frappe.msgprint(__('All Sizing Beams of this program are already received.'));
-            } else if (groups.length == 1) {
-                open_receipt([groups[0].sizing_beam]);
-            } else {
-                // one tick per shared beam - tick several to receive them on ONE Sizing Receipt
-                const d = new frappe.ui.Dialog({
-                    title: __('Select Sizing Beam(s)'),
-                    fields: groups.map((g, i) => ({
-                        fieldname: 'beam_' + i, fieldtype: 'Check', default: 1,
-                        label: g.sizing_beam + ' - ' + g.rows + ' row(s) - ' + (g.finish_items || '') + ' - balance ' + flt(g.remaining, 2) + ' m'
-                    })),
-                    primary_action_label: __('Create'),
-                    primary_action: function (v) {
-                        const picked = groups.filter((g, i) => v['beam_' + i]).map(g => g.sizing_beam);
-                        if (!picked.length) { frappe.msgprint(__('Select at least one Sizing Beam.')); return; }
-                        d.hide();
-                        open_receipt(picked);
-                    }
-                });
-                d.show();
+                frappe.msgprint(__('All Beam Nos of this program are already received.'));
+                return;
             }
+            const fields = [{
+                fieldtype: 'HTML',
+                options: '<p class="text-muted">' + __('Tick the Beam No(s) received and write the meters each beam gave. Several beams of one Beam No: separate with commas, e.g. 3000, 2900.') + '</p>'
+            }];
+            groups.forEach((g, i) => {
+                fields.push({ fieldtype: 'Section Break' });
+                fields.push({
+                    fieldname: 'beam_' + i, fieldtype: 'Check', default: 1,
+                    label: __('Beam No {0}', [g.sizing_beam]) + ' - ' + (g.finish_items || '') + ' - ' + __('balance {0} m', [flt(g.remaining, 2)])
+                });
+                fields.push({
+                    fieldname: 'meters_' + i, fieldtype: 'Data', default: g.default_meters,
+                    label: __('Meters per beam') + (g.beams > 1 ? ' (' + __('{0} beams', [g.beams]) + ')' : ''),
+                    depends_on: 'beam_' + i
+                });
+            });
+            const d = new frappe.ui.Dialog({
+                title: __('Create Sizing Receipt'),
+                fields: fields,
+                primary_action_label: __('Create'),
+                primary_action: function (v) {
+                    const picked = [], meters = {};
+                    groups.forEach((g, i) => {
+                        if (!v['beam_' + i]) { return; }
+                        picked.push(g.sizing_beam);
+                        meters[g.sizing_beam] = (v['meters_' + i] || '').trim();
+                    });
+                    if (!picked.length) { frappe.msgprint(__('Select at least one Beam No.')); return; }
+                    d.hide();
+                    open_receipt(picked, meters);
+                }
+            });
+            d.show();
         }
     });
 }
@@ -800,13 +818,15 @@ if (!window.__sizing_yarn_rows_loaded) {
         const ycpm = flt(r.yarn_count) ? (flt(r.ends) / 768.1) / flt(r.yarn_count) : 0;
         const lbs = flt(r.net_meter) * ycpm;
         const wastage = lbs * wpct / 100;
+        // LBS Issue = (Net Meter x Ends) / 768.1 / Yarn Count
+        r.lbs_issue = lbs;
         const upd = {
             cone_weight: flt(r.cones_per_bag) ? flt(r.lbs_per_bag) / flt(r.cones_per_bag) : 0,
             yarn_consumption_per_meter: ycpm,
             lbs: lbs,
             wastage: wastage,
             gross_meter: flt(r.net_meter) * (1 + wpct / 100),
-            bags_issue: (flt(r.lbs_issue) + wastage) / (flt(r.lbs_per_bag) || 100)
+            bags_issue: (lbs + wastage) / (flt(r.lbs_per_bag) || 100)
         };
         if (!r.sizing_program_row) {
             upd.balance_net_meter = flt(r.net_meter);
@@ -816,7 +836,7 @@ if (!window.__sizing_yarn_rows_loaded) {
         frm.refresh_field("yarn_items");
     };
 
-    const recalc_fields = ["yarn_count", "cones_per_bag", "lbs_per_bag", "net_meter", "lbs_issue", "ends", "wastage_percent"];
+    const recalc_fields = ["yarn_count", "cones_per_bag", "lbs_per_bag", "net_meter", "ends", "wastage_percent"];
     const handlers = {
         form_render: function (frm, cdt, cdn) { window.sizing_yarn_recalc_row(frm, cdt, cdn); },
         yarn_items_add: function (frm, cdt, cdn) {
@@ -853,10 +873,10 @@ function get_items_from_weaving_contracts(frm) {
                     let added = 0;
                     rows.forEach(function (row) {
                         const dup = (frm.doc.yarn_items || []).some(x =>
-                            x.weaving_contract === row.weaving_contract && x.yarn_item === row.yarn_item && x.beam_item === row.beam_item);
+                            x.weaving_contract === row.weaving_contract && x.finish_item === row.finish_item && x.yarn_item === row.yarn_item && x.beam_item === row.beam_item);
                         if (dup) { return; }
                         const child = frm.add_child("yarn_items");
-                        ["weaving_contract", "finish_item", "yarn_item", "beam_item", "lbs_per_bag", "lbs_issue"].forEach(f => {
+                        ["weaving_contract", "finish_item", "yarn_item", "beam_item", "lbs_per_bag", "weaving_contract_lbs"].forEach(f => {
                             child[f] = row[f];
                         });
                         if (frm.doc.warp_wastage_percent) { child.wastage_percent = frm.doc.warp_wastage_percent; }

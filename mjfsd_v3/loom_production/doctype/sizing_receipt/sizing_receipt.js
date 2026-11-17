@@ -356,7 +356,20 @@ const sizing_receipt_row_handlers = {
 		locals[cdt][cdn].sizing_program = frm.doc.sizing_program;
 		frm.refresh_field('yarn_items');
 	},
-	yarn_item: sizing_receipt_set_row_rate
+	yarn_item: sizing_receipt_set_row_rate,
+	// Meters per Beam ("3000, 2900"): the number of values is the number of beams
+	beam_meters: function (frm, cdt, cdn) {
+		const r = locals[cdt][cdn];
+		const values = String(r.beam_meters || '').split(/[,;\s]+/).filter(Boolean).map(Number);
+		if (values.some(v => !(v > 0))) {
+			frappe.msgprint(__('Meters per Beam: write the meters of each beam as numbers, e.g. 3000, 2900.'));
+			return;
+		}
+		if (values.length) {
+			r.beam_no = values.length;
+			frm.refresh_field('yarn_items');
+		}
+	}
 };
 ['ends', 'lbs', 'beem_length', 'sizing_rate', 'yarn_item_rate'].forEach(function (f) {
 	sizing_receipt_row_handlers[f] = sizing_receipt_recalc_row;

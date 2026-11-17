@@ -165,7 +165,7 @@ def _create_entries_per_beam_item(sizing_receipt, batches):
 	Manufacture Stock Entry, so a receipt holding several Beam Items (Pile and
 	Ground) raises one Beem Receipt entry per Beam Item. Each one consumes
 	the yarn of its own rows and receives its beams, one row per beam
-	(Batch): the item's meters are split evenly over its beams and the rate
+	(Batch): the meters of each beam are the ones written in Meters per Beam (else the item's meters are split evenly) and the rate
 	is that item's yarn + sizing cost / its meters. Names of all the entries
 	are kept in the receipt's stock_entries_json (the first also in
 	manufacture_stock_entry) so cancel removes every one."""
@@ -182,8 +182,10 @@ def _create_entries_per_beam_item(sizing_receipt, batches):
 	i = 0
 	for g in beam_item_groups(sizing_receipt):
 		entry = per_item.setdefault(g["item"], {"beams": [], "yarn": {}, "cost": 0.0, "lbs": 0.0})
+		# meters of each beam: the ones written on the receipt (e.g. 3000, 2900), else the group's meters shared evenly
+		meters = g["meters"] if len(g.get("meters") or []) == g["beams"] else [g["net"] / g["beams"]] * g["beams"]
 		for _n in range(g["beams"]):
-			entry["beams"].append((batches[i], g["net"] / g["beams"], g["cost"] / g["net"] if g["net"] else 0))
+			entry["beams"].append((batches[i], meters[_n], g["cost"] / g["net"] if g["net"] else 0))
 			i += 1
 		entry["cost"] += g["cost"]
 		entry["lbs"] += g["lbs"]

@@ -27,7 +27,6 @@ def open_stock_entry(sizing_program_name):
 	sp = frappe.get_doc("Sizing Program", sizing_program_name)
 	SOURCE_WAREHOUSE = pick(sp.get("source_warehouse"), "sizing_program_source_warehouse", "Source Warehouse")
 	TARGET_WAREHOUSE = pick(sp.get("target_warehouse"), "sizing_program_target_warehouse", "Target Warehouse")
-	item = frappe.get_doc("Item", sp.item)
 
 	se = frappe.new_doc("Stock Entry")
 	se.stock_entry_type = "Material Transfer"
@@ -36,13 +35,33 @@ def open_stock_entry(sizing_program_name):
 	se.set_posting_time = 1
 	se.posting_date = sp.date
 
-	se.append("items", {
-		"item_code": sp.item,
-		"qty": flt(sp.bags_issue) * 100,
-		"s_warehouse": SOURCE_WAREHOUSE,
-		"t_warehouse": TARGET_WAREHOUSE,
-		"uom": item.stock_uom,
-		"stock_uom": item.stock_uom,
-	})
+	if sp.get("yarn_items"):
+		# Yarn Details mode: one row per Yarn Item with the LBS Issue of the program (rows of the same yarn added together)
+		totals = {}
+		for r in sp.yarn_items:
+			if not r.yarn_item:
+				frappe.throw(_("Row {0}: Yarn Item is required.").format(r.idx))
+			totals[r.yarn_item] = totals.get(r.yarn_item, 0) + flt(r.lbs_issue)
+		lines = [(item, qty) for item, qty in totals.items() if qty > 0]
+		if not lines:
+			frappe.throw(_("LBS Issue is 0 on every row of {0}; enter Net Meter, Ends and Yarn Count first.").format(sp.name))
+	else:
+		if not sp.item:
+			frappe.throw(_("Set Brand (the yarn item) on {0} first.").format(sp.name))
+		lines = [(sp.item, flt(sp.bags_issue) * 100)]
+
+	for item_code, qty in lines:
+		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
+		if not stock_uom:
+			frappe.throw(_("Item {0} not found.").format(item_code))
+		se.append("items", {
+			"item_code": item_code,
+			"qty": qty,
+			"s_warehouse": SOURCE_WAREHOUSE,
+			"t_warehouse": TARGET_WAREHOUSE,
+			"uom": stock_uom,
+			"stock_uom": stock_uom,
+			"conversion_factor": 1,
+		})
 
 	return se
