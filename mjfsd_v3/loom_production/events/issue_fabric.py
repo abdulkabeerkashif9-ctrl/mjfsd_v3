@@ -81,76 +81,6 @@ from frappe.utils import flt
 # the page, but this closes the actual gap you're blocked on right now.
 
 
-@frappe.whitelist()
-def issue_fabric(dyeing_contract, rows):
-	"""rows: JSON list of {"row_name": <Dyeing Contract Item name>, "qty": <float>,
-	"no_of_rolls": <float>, "weight_kgs": <float>}. Returns the inserted
-	(not yet submitted) Stock Entry doc, for the browser to route to."""
-	if isinstance(rows, str):
-		rows = json.loads(rows)
-
-	dc = frappe.get_doc("Dyeing Contract", dyeing_contract)
-	if dc.docstatus != 1:
-		frappe.throw(_("Dyeing Contract must be submitted before fabric can be issued."))
-
-	dc_rows_by_name = {r.name: r for r in dc.items}
-
-	se = frappe.new_doc("Stock Entry")
-	se.stock_entry_type = "Material Transfer"
-	se.purpose = "Material Transfer"
-	se.company = frappe.defaults.get_global_default("company")
-	# New parent-level Stock Entry custom fields (mjfsd_v3/custom/stock_entry.json)
-	# - "why are there no references of documents in stock entry" - so
-	# opening this Stock Entry shows which Dyeing Contract/Sales Order it
-	# came from, not just the per-row custom_dyeing_contract_item tag.
-	se.custom_dyeing_contract = dc.name
-	if dc.sales_order:
-		se.custom_sales_order = dc.sales_order
-
-	issued_any = False
-	for entry in rows:
-		qty = flt(entry.get("qty"))
-		if not qty:
-			continue
-
-		row_name = entry.get("row_name")
-		dc_row = dc_rows_by_name.get(row_name)
-		if not dc_row:
-			frappe.throw(_("Row {0} not found on Dyeing Contract {1}").format(row_name, dc.name))
-		if not dc_row.greige_batch:
-			frappe.throw(_("Row for Item {0} has no Greige Batch - can't issue.").format(dc_row.item))
-
-		no_of_rolls = flt(entry.get("no_of_rolls"))
-		weight_kgs = flt(entry.get("weight_kgs"))
-
-		se.append(
-			"items",
-			{
-				"s_warehouse": dc.source_warehouse,
-				"t_warehouse": dc.target_warehouse,
-				"item_code": dc_row.item,
-				"qty": qty,
-				"batch_no": dc_row.greige_batch,
-				"use_serial_batch_fields": 1,
-				"uom": frappe.db.get_value("Item", dc_row.item, "stock_uom"),
-				"custom_no_of_rolls": no_of_rolls,
-				"custom_weight_kgs": weight_kgs,
-				"custom_dyeing_contract_item": row_name,
-			},
-		)
-		issued_any = True
-
-	if not issued_any:
-		frappe.throw(_("Enter a qty to issue for at least one item."))
-
-	se.insert(ignore_permissions=True)
-
-	if not frappe.db.get_value("Dyeing Contract", dc.name, "status"):
-		frappe.db.set_value("Dyeing Contract", dc.name, "status", "Fabric Issued")
-
-	return se
-
-
 def cancel_issued_stock_entries(doc):
 	"""Dyeing Contract on_cancel. Refuses to cancel if anything has already
 	been received back on a Dyeing Receipt against this contract (that
@@ -391,52 +321,6 @@ def _recompute_dyeing_contract_issue_totals(dc_name):
 
 
 # Gate Pass source: Emadi Settings > Dyeing Source Warehouse (no hardcoded names).
-
-
-@frappe.whitelist()
-def create_gate_pass(dyeing_contract):
-	"""Dyeing Contract > Gate Pass: an unsaved Material Transfer Stock Entry with
-	every contract row still to be sent (AB Qty less what is already issued),
-	taken from the Dyeing Source Warehouse (Emadi Settings) and tagged to the contract rows so Issued
-	Qty updates when the Stock Entry is submitted. Opened for review, not saved."""
-	dc = frappe.get_doc("Dyeing Contract", dyeing_contract)
-	if dc.docstatus != 1:
-		frappe.throw(_("Dyeing Contract must be submitted before a Gate Pass can be made."))
-
-	from mjfsd_v3.loom_production.warehouse_defaults import pick
-	gate_pass_warehouse = pick(None, "dyeing_source_warehouse")
-
-	se = frappe.new_doc("Stock Entry")
-	se.stock_entry_type = "Material Transfer"
-	se.purpose = "Material Transfer"
-	se.company = frappe.defaults.get_global_default("company")
-	se.custom_dyeing_contract = dc.name
-	if dc.sales_order:
-		se.custom_sales_order = dc.sales_order
-
-	for row in dc.items or []:
-		remaining = flt(row.order_qty) - flt(row.issued_qty)
-		if remaining <= 0.0001:
-			continue
-		if not row.greige_batch:
-			frappe.throw(_("Row for Item {0} has no Greige Batch - can't issue.").format(row.item))
-		se.append(
-			"items",
-			{
-				"s_warehouse": gate_pass_warehouse,
-				"t_warehouse": dc.target_warehouse,
-				"item_code": row.item,
-				"qty": remaining,
-				"batch_no": row.greige_batch,
-				"use_serial_batch_fields": 1,
-				"uom": frappe.db.get_value("Item", row.item, "stock_uom"),
-				"custom_dyeing_contract_item": row.name,
-			},
-		)
-
-	if not se.items:
-		frappe.throw(_("All items of {0} have already been issued.").format(dc.name))
-	return se
 
 
 def validate_gate_pass_rows(doc, method=None):

@@ -78,8 +78,6 @@ def get_items_from_dyeing_contracts(contracts):
 					"dyeing_contract": dc.name,
 					"dyeing_contract_item": item.name,
 					"supplier": dc.supplier,
-					"source_warehouse": dc.source_warehouse,
-					"target_warehouse": dc.target_warehouse,
 				}
 			)
 	return out

@@ -89,12 +89,6 @@ function get_items_from_dyeing_contracts(frm) {
 						if (!frm.doc.supplier) {
 							frm.set_value("supplier", rows[0].supplier);
 						}
-						if (!frm.doc.supplier_warehouse && rows[0].target_warehouse) {
-							frm.set_value("supplier_warehouse", rows[0].target_warehouse);
-						}
-						if (!frm.doc.greige_warehouse && rows[0].source_warehouse) {
-							frm.set_value("greige_warehouse", rows[0].source_warehouse);
-						}
 					}
 					frm.refresh_field("items");
 					cur_dialog && cur_dialog.hide();
@@ -124,7 +118,13 @@ function fetch_rolls_dialog(frm, row) {
 		},
 		freeze: true,
 		callback: (r) => {
-			const rolls = r.message || [];
+			// rolls already ticked on another row of this entry are not offered again
+			const others = new Set(
+				(frm.doc.roll_details || [])
+					.filter((d) => d.item_row !== row.row_key)
+					.map((d) => d.source_doctype + "|" + d.source_name)
+			);
+			const rolls = (r.message || []).filter((x) => !others.has(x.source_doctype + "|" + x.source_name));
 			const mine = (frm.doc.roll_details || []).filter((d) => d.item_row === row.row_key);
 			// rolls ticked on this row but not offered by the server (e.g. saved earlier) stay in the list
 			const have = new Set(rolls.map((x) => x.source_doctype + "|" + x.source_name));

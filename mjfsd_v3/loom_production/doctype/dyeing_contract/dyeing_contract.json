@@ -12,8 +12,6 @@
   "sales_order",
   "light_source",
   "process_type",
-  "source_warehouse",
-  "target_warehouse",
   "section_break_items",
   "items",
   "section_break_totals",
@@ -80,22 +78,6 @@
    "fieldtype": "Select",
    "label": "Process Type",
    "options": "Bleaching\nWash\nDyeing\nOther"
-  },
-  {
-   "fieldname": "source_warehouse",
-   "fieldtype": "Link",
-   "label": "Source Warehouse",
-   "options": "Warehouse",
-   "reqd": 1,
-   "description": "Our own warehouse - Greige fabric is issued FROM here to the dyer."
-  },
-  {
-   "fieldname": "target_warehouse",
-   "fieldtype": "Link",
-   "label": "Target Warehouse",
-   "options": "Warehouse",
-   "reqd": 1,
-   "description": "The dyer's warehouse - Greige fabric is received here on Issue Fabric, and consumed from here on Dyeing Receipt's Repack entry."
   },
   {
    "fieldname": "section_break_items",

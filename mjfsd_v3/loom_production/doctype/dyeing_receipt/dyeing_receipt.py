@@ -11,7 +11,26 @@ from mjfsd_v3.loom_production.events.create_repack_stock_entry_from_dyeing_recei
 
 class DyeingReceipt(Document):
 	def validate(self):
+		self.validate_rolls()
 		self.recalculate_totals()
+
+	def validate_rolls(self):
+		"""A roll can be received once: not twice on this receipt, not on another receipt that is not cancelled."""
+		refs = [r.fie_roll_ref for r in self.items or [] if r.get("fie_roll_ref")]
+		if len(refs) != len(set(refs)):
+			frappe.throw(_("A Roll# is listed twice."))
+		if not refs:
+			return
+		other = frappe.db.sql(
+			"""
+			select di.roll_no, d.name from `tabDyeing Receipt Item` di
+			inner join `tabDyeing Receipt` d on d.name = di.parent and di.parenttype = 'Dyeing Receipt'
+			where d.docstatus < 2 and d.name != %s and di.fie_roll_ref in %s
+			""",
+			(self.name or "", tuple(refs)),
+		)
+		if other:
+			frappe.throw(_("Roll# {0} is already received on {1}.").format(other[0][0], other[0][1]))
 
 	def before_submit(self):
 		# Actual Rolls and Actual Weight are mandatory when something is received

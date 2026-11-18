@@ -23,7 +23,7 @@ def get_dyeing_contracts_for_selection():
 	contracts = frappe.get_all(
 		"Dyeing Contract",
 		filters={"docstatus": 1},
-		fields=["name", "supplier", "source_warehouse", "target_warehouse"],
+		fields=["name", "supplier"],
 		order_by="creation desc",
 	)
 	return contracts
@@ -55,8 +55,6 @@ def get_dyeing_contract_items(dyeing_contracts):
 					"dyeing_contract_item": row.name,
 					"greige_batch": row.greige_batch,
 					"color_batch": color_batch,
-					"source_warehouse": dc.target_warehouse,
-					"target_warehouse": dc.source_warehouse,
 					# 2026-09-28 - "user can select different supplier in
 					# Dyeing Receipt" (your words) - fetched here so
 					# dyeing_receipt.js can set+lock it, same fix as
@@ -86,8 +84,7 @@ def create_dyeing_receipt_from_dyeing_contract(dyeing_contract):
 
 	dr = frappe.new_doc("Dyeing Receipt")
 	dr.supplier = dc.supplier
-	dr.source_warehouse = rows[0].get("source_warehouse")
-	dr.target_warehouse = rows[0].get("target_warehouse")
+	_default_warehouses(dr)
 	for data in rows:
 		dr.append("items", data)
 
@@ -119,3 +116,55 @@ def _get_color_batch(sales_order, item_code, color):
 		{"parent": sales_order, "item_code": item_code, "custom_color": color},
 		"custom_batch",
 	)
+
+
+def _default_warehouses(dr):
+	"""Receipt Source = supplier warehouse, Target = greige/dyeing warehouse - both from Emadi Settings (Dyeing pair)."""
+	from mjfsd_v3.loom_production.warehouse_defaults import fill_empty
+
+	fill_empty(dr, {"source_warehouse": "dyeing_target_warehouse", "target_warehouse": "dyeing_source_warehouse"})
+
+
+@frappe.whitelist()
+def get_issued_rolls(supplier, exclude_receipt=None):
+	"""Rolls issued to this supplier on submitted Fabric Issuance Entries and not yet on another Dyeing Receipt (not cancelled)."""
+	if not supplier:
+		frappe.throw(_("Select the Supplier first."))
+	rows = frappe.db.sql(
+		"""
+		select r.name as fie_roll_ref, f.name as fabric_issuance_entry, r.roll_no, r.pcs, r.weight_kg,
+		       i.item_code, i.color, i.sales_order, i.towel_costing_sheet, i.greige_batch,
+		       i.dyeing_contract, i.dyeing_contract_item
+		from `tabFabric Issuance Entry Roll` r
+		inner join `tabFabric Issuance Entry` f on f.name = r.parent and r.parenttype = 'Fabric Issuance Entry'
+		inner join `tabFabric Issuance Entry Item` i on i.parent = f.name and i.row_key = r.item_row
+		where f.docstatus = 1 and f.supplier = %s
+		order by i.item_code, i.color, f.name, r.idx
+		""",
+		(supplier,),
+		as_dict=True,
+	)
+	taken = {
+		x[0]
+		for x in frappe.db.sql(
+			"""
+			select di.fie_roll_ref from `tabDyeing Receipt Item` di
+			inner join `tabDyeing Receipt` d on d.name = di.parent and di.parenttype = 'Dyeing Receipt'
+			where d.docstatus < 2 and d.name != %s and ifnull(di.fie_roll_ref, '') != ''
+			""",
+			(exclude_receipt or "",),
+		)
+	}
+	out = []
+	for r in rows:
+		if r.fie_roll_ref in taken:
+			continue
+		r.weight_lbs = flt(r.weight_kg) * 2.2046
+		dci = r.dyeing_contract_item and frappe.db.get_value(
+			"Dyeing Contract Item", r.dyeing_contract_item, ["rate", "dyeing_wastage_percent"], as_dict=True
+		)
+		r.rate = flt(dci.rate) if dci else 0
+		r.dyeing_wastage_percent = flt(dci.dyeing_wastage_percent) if dci else 0
+		r.color_batch = _get_color_batch(r.sales_order, r.item_code, r.color)
+		out.append(r)
+	return out

@@ -6,6 +6,9 @@
  "engine": "InnoDB",
  "field_order": [
   "item",
+  "roll_no",
+  "issued_qty",
+  "issued_weight",
   "weave",
   "color",
   "gross_weight",
@@ -30,7 +33,9 @@
   "color_batch",
   "fabric_issuance_pcs",
   "fabric_issuance_rolls",
-  "fabric_issuance_weight_kg"
+  "fabric_issuance_weight_kg",
+  "fie_roll_ref",
+  "fabric_issuance_entry"
  ],
  "fields": [
   {
@@ -238,6 +243,53 @@
    "read_only": 1,
    "no_copy": 1,
    "description": "Internal - how much of this row's Weight (kg) (Received) has already been sent out on a Dyed Fabric Issuance."
+  },
+  {
+   "fieldname": "roll_no",
+   "fieldtype": "Data",
+   "label": "Roll#",
+   "read_only": 1,
+   "in_list_view": 1,
+   "no_copy": 1,
+   "description": "Roll picked with Select Rolls."
+  },
+  {
+   "fieldname": "issued_qty",
+   "fieldtype": "Float",
+   "label": "Issued Qty",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1,
+   "description": "Pieces of this roll as issued on the Fabric Issuance Entry."
+  },
+  {
+   "fieldname": "issued_weight",
+   "fieldtype": "Float",
+   "label": "Issued Weight (LBS)",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1,
+   "description": "Weight of this roll as issued on the Fabric Issuance Entry."
+  },
+  {
+   "fieldname": "fie_roll_ref",
+   "fieldtype": "Data",
+   "label": "FIE Roll Ref",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Internal - Fabric Issuance Entry Roll row this was picked from (a roll can be received once).",
+   "in_list_view": 0
+  },
+  {
+   "fieldname": "fabric_issuance_entry",
+   "fieldtype": "Link",
+   "options": "Fabric Issuance Entry",
+   "label": "Fabric Issuance Entry",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "in_list_view": 0
   }
  ],
  "index_web_pages_for_search": 1,
