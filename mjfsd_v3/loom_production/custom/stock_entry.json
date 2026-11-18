@@ -1274,6 +1274,17 @@
    "read_only": 1,
    "no_copy": 1,
    "description": "Internal reference - set automatically on the Manufacture entry raised per row when a Daily Loom Production document (renamed 2026-09-28 from Daily Towel Production - see mjfsd_v3/patches/) is submitted. Fieldname kept as custom_daily_towel_production so the existing column doesn't need a migration of its own."
+  },
+  {
+   "fieldname": "custom_fabric_issuance_entry",
+   "fieldtype": "Link",
+   "label": "Fabric Issuance Entry",
+   "options": "Fabric Issuance Entry",
+   "insert_after": "custom_dyeing_contract",
+   "dt": "Stock Entry",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Internal reference - set automatically on the Material Transfer entry made when a Fabric Issuance Entry is submitted."
   }
  ],
  "custom_perms": [],

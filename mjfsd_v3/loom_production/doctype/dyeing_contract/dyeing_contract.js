@@ -1,36 +1,68 @@
 frappe.ui.form.on("Dyeing Contract", {
 	refresh(frm) {
+		if (frm.doc.docstatus === 0) {
+			frm.add_custom_button(__("Sales Order"), () => get_items_from_sales_orders(frm), __("Get Items From"));
+		}
 		if (frm.doc.docstatus === 1) {
-			frm.add_custom_button(__("Issue Fabric"), () => open_issue_fabric_dialog(frm));
-			// Gate Pass: opens a Stock Entry with every item still to be sent,
-			// taken from "Finished Goods - PT".
-			frm.add_custom_button(__("Gate Pass"), () => create_gate_pass(frm));
-			// New 2026-09-15 - same "create a prefilled draft and route to
+			// "Create Dyeing Receipt": same "create a prefilled draft and route to
 			// it" pattern already used by Weaving Contract's own "Weaving
 			// Receipt" button, reusing Dyeing Receipt's existing
 			// Get-Items-From-Dyeing-Contract row-building logic so both
 			// paths stay consistent.
 			frm.add_custom_button(__("Create Dyeing Receipt"), () => create_dyeing_receipt(frm));
-			// New 2026-09-16 - self-heals Issued Qty/Rolls/Weight from a
-			// live query against actually-submitted Stock Entries every
-			// time this form loads, instead of only ever trusting the
-			// on_submit-hook-maintained accumulator (which needs a
-			// hooks.py entry that hasn't been confirmed wired). Silent
-			// no-op if the numbers are already correct.
+			// Self-heals Issued Qty/Rolls/Weight from a live query against
+			// actually-submitted Stock Entries every time this form loads
+			// (fabric is issued through Fabric Issuance Entry now).
 			sync_issued_totals(frm);
 		}
 	}
 });
 
-function create_gate_pass(frm) {
-	frappe.call({
-		method: "mjfsd_v3.loom_production.events.issue_fabric.create_gate_pass",
-		args: { dyeing_contract: frm.doc.name },
-		freeze: true,
-		callback: (r) => {
-			if (!r.message) return;
-			frappe.model.sync(r.message);
-			frappe.set_route("Form", r.message.doctype, r.message.name);
+// Get Items from Sales Order: pick one or several submitted Sales Orders; every row with a Color and some AB Qty
+// still unassigned is added. The qty goes into Solid / Stripe / Yarn Dyed by the Dyeing Type on the Towel Costing Sheet.
+function get_items_from_sales_orders(frm) {
+	new frappe.ui.form.MultiSelectDialog({
+		doctype: "Sales Order",
+		target: frm,
+		setters: { customer: null, transaction_date: null },
+		add_filters_group: 1,
+		get_query() {
+			return { filters: { docstatus: 1 } };
+		},
+		action(selections) {
+			if (!selections || !selections.length) {
+				return;
+			}
+			frappe.call({
+				method: "mjfsd_v3.loom_production.events.create_dyeing_contract.get_items_from_sales_orders",
+				args: { sales_orders: selections },
+				freeze: true,
+				callback: (r) => {
+					const rows = r.message || [];
+					const have = new Set((frm.doc.items || []).map((x) => x.sales_order_item).filter(Boolean));
+					let added = 0;
+					rows.forEach((row) => {
+						if (have.has(row.sales_order_item)) {
+							return;
+						}
+						const child = frm.add_child("items");
+						Object.keys(row).forEach((k) => {
+							if (row[k] !== null && row[k] !== undefined) {
+								child[k] = row[k];
+							}
+						});
+						added++;
+					});
+					const orders = new Set((frm.doc.items || []).map((x) => x.sales_order).filter(Boolean));
+					if (orders.size === 1) {
+						frm.set_value("sales_order", [...orders][0]);
+					}
+					frm.refresh_field("items");
+					recalc_contract_amount(frm);
+					cur_dialog && cur_dialog.hide();
+					frappe.show_alert({ message: __("{0} row(s) added", [added]), indicator: "green" });
+				}
+			});
 		}
 	});
 }
@@ -82,120 +114,4 @@ function create_dyeing_receipt(frm) {
 			frappe.set_route("Form", r.message.doctype, r.message.name);
 		}
 	});
-}
-
-function open_issue_fabric_dialog(frm) {
-	let rows = (frm.doc.items || []).map((row) => {
-		let remaining = flt(row.order_qty) - flt(row.issued_qty);
-		return {
-			row_name: row.name,
-			item: row.item,
-			color: row.color,
-			order_qty: row.order_qty,
-			issued_qty: row.issued_qty,
-			remaining: remaining
-		};
-	});
-
-	if (!rows.length) {
-		frappe.msgprint(__("No items on this Dyeing Contract."));
-		return;
-	}
-
-	let dialog = new frappe.ui.Dialog({
-		title: __("Issue Fabric"),
-		size: "large",
-		fields: [
-			{
-				fieldname: "items_html",
-				fieldtype: "HTML"
-			}
-		],
-		primary_action_label: __("Issue"),
-		primary_action: () => {
-			// Scoped to THIS dialog's own wrapper (dialog.$wrapper), not a
-			// bare global $('#...') lookup - a Dialog stays in the DOM
-			// (hidden) after it's closed rather than being removed, so a
-			// global id-based lookup could silently grab a stale input
-			// left over from an earlier time this dialog was opened,
-			// instead of the one you just typed into. Scoping to this
-			// dialog instance's own wrapper rules that out entirely.
-			let entries = rows
-				.map((r) => {
-					let $row = dialog.$wrapper.find(`[data-row-name="${r.row_name}"]`);
-					return {
-						row_name: r.row_name,
-						qty: flt($row.find('[data-field="qty"]').val()),
-						no_of_rolls: flt($row.find('[data-field="no_of_rolls"]').val()),
-						weight_kgs: flt($row.find('[data-field="weight_kgs"]').val())
-					};
-				})
-				.filter((e) => e.qty > 0);
-
-			if (!entries.length) {
-				frappe.msgprint(__("Enter a qty to issue for at least one item."));
-				return;
-			}
-
-			frappe.call({
-				method: "mjfsd_v3.loom_production.events.issue_fabric.issue_fabric",
-				args: {
-					dyeing_contract: frm.doc.name,
-					rows: entries
-				},
-				freeze: true,
-				callback: (r) => {
-					if (!r.message) {
-						return;
-					}
-					dialog.hide();
-					// 2026-09-15 (feature v3) - issue_fabric() now only
-					// inserts a draft Stock Entry instead of submitting it
-					// ("stock entry form gets opened in Stock Entry and he
-					// submits it manually" - your words). Route to it
-					// instead of showing an alert + reloading this form.
-					frappe.model.sync(r.message);
-					frappe.set_route("Form", r.message.doctype, r.message.name);
-				}
-			});
-		}
-	});
-
-	let rows_html = rows
-		.map(
-			(r) => `
-		<tr data-row-name="${frappe.utils.escape_html(r.row_name)}">
-			<td>${frappe.utils.escape_html(r.item)}</td>
-			<td>${frappe.utils.escape_html(r.color || "")}</td>
-			<td class="text-right">${format_number(r.order_qty)}</td>
-			<td class="text-right">${format_number(r.issued_qty)}</td>
-			<td class="text-right">${format_number(r.remaining)}</td>
-			<td><input type="number" step="any" class="form-control" data-field="qty" value="0"></td>
-			<td><input type="number" step="any" class="form-control" data-field="no_of_rolls" value="0"></td>
-			<td><input type="number" step="any" class="form-control" data-field="weight_kgs" value="0"></td>
-		</tr>`
-		)
-		.join("");
-
-	dialog.fields_dict.items_html.$wrapper.html(`
-		<div style="overflow-x:auto">
-		<table class="table table-bordered">
-			<thead>
-				<tr>
-					<th>${__("Item")}</th>
-					<th>${__("Color")}</th>
-					<th class="text-right">${__("Order Qty")}</th>
-					<th class="text-right">${__("Issued So Far")}</th>
-					<th class="text-right">${__("Remaining")}</th>
-					<th>${__("Qty To Issue")}</th>
-					<th>${__("No. of Rolls")}</th>
-					<th>${__("Weight (Kgs)")}</th>
-				</tr>
-			</thead>
-			<tbody>${rows_html}</tbody>
-		</table>
-		</div>
-	`);
-
-	dialog.show();
 }

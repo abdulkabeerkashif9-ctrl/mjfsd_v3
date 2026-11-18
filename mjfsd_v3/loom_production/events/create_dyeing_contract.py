@@ -18,15 +18,40 @@ def create_dyeing_contract_from_sales_order(sales_order):
 	# prefilled with only what's still unassigned of each row's AB Qty
 	# (AB Qty minus every submitted Dyeing Contract's Order Qty for that
 	# row). Reduce Order Qty / delete rows to give this dyer only part of it.
-	used = get_dyeing_used(so.name)
-	has_color_rows = False
-	tcs_cache = {}
+	rows, has_color_rows = _rows_from_sales_order(so, get_dyeing_used(so.name), {})
+	for r in rows:
+		dc.append("items", r)
 
+	if not dc.items:
+		if has_color_rows:
+			frappe.throw(_("The full AB Qty of every row on {0} is already assigned to submitted Dyeing Contracts.").format(so.name))
+		frappe.throw(_("No Sales Order Items have a Color set - nothing to send for dyeing."))
+
+	return dc
+
+
+class _Row(dict):
+	"""dict with attribute access and .set(), so it can go through dyeing_calc.apply_row_details like a document row"""
+
+	def __getattr__(self, key):
+		return self.get(key)
+
+	def __setattr__(self, key, value):
+		self[key] = value
+
+	def set(self, key, value):
+		self[key] = value
+
+
+def _rows_from_sales_order(so, used, tcs_cache):
+	"""Dyeing Contract Item dicts for one Sales Order: every row with a Color and some AB Qty still unassigned.
+	The unassigned qty goes into Solid / Stripe / Yarn Dyed according to the Dyeing Type of the row's Towel Costing Sheet
+	Finish Item row. Returns (rows, has_color_rows)."""
+	rows = []
+	has_color_rows = False
 	for row in so.items:
 		if not row.get("custom_color"):
-			# Rows with no Color set aren't going through dyeing (e.g. a
-			# Greige-only line) - skipped rather than forced in, since
-			# there's nothing to dye and no Color batch to consume/produce.
+			# Rows with no Color set aren't going through dyeing (e.g. a Greige-only line)
 			continue
 		has_color_rows = True
 
@@ -35,8 +60,7 @@ def create_dyeing_contract_from_sales_order(sales_order):
 			continue
 
 		tcs = row.get("custom_towel_costing_sheet")
-		new_row = dc.append(
-			"items",
+		item = _Row(
 			{
 				"item": row.item_code,
 				"color": row.custom_color,
@@ -47,16 +71,30 @@ def create_dyeing_contract_from_sales_order(sales_order):
 				"sales_order_item": row.name,
 				"towel_costing_sheet": tcs,
 				"greige_batch": row.get("custom_greige_batch"),
-			},
+			}
 		)
-		apply_row_details(new_row, get_tcs_finish_row(tcs_cache, tcs, row.item_code))
+		apply_row_details(item, get_tcs_finish_row(tcs_cache, tcs, row.item_code))
+		rows.append(dict(item))
+	return rows, has_color_rows
 
-	if not dc.items:
-		if has_color_rows:
-			frappe.throw(_("The full AB Qty of every row on {0} is already assigned to submitted Dyeing Contracts.").format(so.name))
-		frappe.throw(_("No Sales Order Items have a Color set - nothing to send for dyeing."))
 
-	return dc
+@frappe.whitelist()
+def get_items_from_sales_orders(sales_orders):
+	"""Dyeing Contract > "Get Items from Sales Order": the rows (see _rows_from_sales_order) of every selected Sales Order."""
+	import json
+
+	if isinstance(sales_orders, str):
+		sales_orders = json.loads(sales_orders)
+	out, tcs_cache = [], {}
+	for name in sales_orders or []:
+		so = frappe.get_doc("Sales Order", name)
+		if so.docstatus != 1:
+			frappe.throw(_("Sales Order {0} must be submitted first.").format(name))
+		rows, _has_color = _rows_from_sales_order(so, get_dyeing_used(so.name), tcs_cache)
+		out.extend(rows)
+	if not out:
+		frappe.msgprint(_("Nothing left to send for dyeing on the selected Sales Order(s): no row with a Color, or the full AB Qty is already on submitted Dyeing Contracts."))
+	return out
 
 
 def get_dyeing_used(sales_order, exclude_contract=None):

@@ -1,0 +1,72 @@
+{
+ "actions": [],
+ "creation": "2026-11-19 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_row",
+  "source_doctype",
+  "parent_doc",
+  "source_name",
+  "roll_no",
+  "pcs",
+  "weight_kg"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_row",
+   "fieldtype": "Data",
+   "label": "Item Row",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "source_doctype",
+   "fieldtype": "Data",
+   "label": "Source Document Type",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "parent_doc",
+   "fieldtype": "Data",
+   "label": "Source Document",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "source_name",
+   "fieldtype": "Data",
+   "label": "Source Row",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "roll_no",
+   "fieldtype": "Data",
+   "label": "Roll#",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "pcs",
+   "fieldtype": "Float",
+   "label": "Pcs",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "weight_kg",
+   "fieldtype": "Float",
+   "label": "Weight (Kg)",
+   "in_list_view": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-19 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Loom Production",
+ "name": "Fabric Issuance Entry Roll",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
