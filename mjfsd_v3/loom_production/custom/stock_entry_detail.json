@@ -793,6 +793,16 @@
    "read_only": 1,
    "no_copy": 1,
    "description": "Internal - set by Weaving Contract's \"Issue Yarn\" button. Names the BOM Items row this yarn came from, so sync_yarn_issued_totals (emadi_v3/emadi/events/issue_yarn.py) can self-heal that row's Yarn Issued (Lbs) straight from actually-submitted Stock Entries - same tagging pattern as custom_dyeing_contract_item. Added 2026-09-16."
+  },
+  {
+   "fieldname": "custom_roll_no",
+   "fieldtype": "Small Text",
+   "label": "Roll No",
+   "insert_after": "custom_no_of_rolls",
+   "dt": "Stock Entry Detail",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Roll number(s) from the Daily Loom Production / Weaving Receipt this row was made from."
   }
  ],
  "custom_perms": [],

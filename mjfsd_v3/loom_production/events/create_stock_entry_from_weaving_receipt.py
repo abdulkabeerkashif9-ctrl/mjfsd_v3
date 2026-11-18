@@ -173,6 +173,13 @@ def create_manufacture_stock_entry(weaving_receipt):
 			# Bundle ... has already created" story.
 			finish_item_data["use_serial_batch_fields"] = 1
 
+		# Roll No: the Roll# values typed on this Items row's Details (Rolls) rows, e.g. "101, 102, 103"
+		finish_item_data["custom_roll_no"] = ", ".join(
+			(d.get("roll_number") or "").strip()
+			for d in (wr.details or [])
+			if d.item_row == item_row.row_key and (d.get("roll_number") or "").strip()
+		)
+
 		finish_row = se.append("items", finish_item_data)
 
 		tracking.append(

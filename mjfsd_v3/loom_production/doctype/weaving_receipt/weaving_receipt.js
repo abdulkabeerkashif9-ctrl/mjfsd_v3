@@ -19,14 +19,9 @@ frappe.ui.form.on("Weaving Receipt", {
 });
 
 frappe.ui.form.on("Weaving Receipt Item", {
+	// The Details (Rolls) table follows No. of Rolls: type the number and that many rows appear.
 	no_of_rolls(frm, cdt, cdn) {
-		maybe_generate_rolls(frm, cdt, cdn);
-	},
-	pcs_challan(frm, cdt, cdn) {
-		maybe_generate_rolls(frm, cdt, cdn);
-	},
-	weight_challan(frm, cdt, cdn) {
-		maybe_generate_rolls(frm, cdt, cdn);
+		sync_rolls(frm, cdt, cdn);
 	}
 });
 
@@ -164,24 +159,17 @@ function make_row_key() {
 	return "rk-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 }
 
-// Fires as soon as No. of Rolls, Pcs (Challan) and Weight (Challan) are
-// all filled on a row - not literally "moves to a new row" (Frappe's
-// grid doesn't expose a reliable row-blur trigger at the field level),
-// but functionally equivalent for the normal left-to-right fill order,
-// and details_generated guards against firing twice on the same row.
-function maybe_generate_rolls(frm, cdt, cdn) {
-	let row = locals[cdt][cdn];
-	if (row.details_generated) {
-		return;
-	}
-	if (!row.no_of_rolls || !row.pcs_challan || !row.weight_challan) {
-		return;
-	}
+// Keeps the Details (Rolls) rows of an Items row equal to its No. of Rolls:
+//   more rolls -> the missing rows are added (Sr # continues, Roll# left empty for the user);
+//   fewer rolls -> rows are removed from the end, but only while they are still empty
+//   (no pcs, weight or Roll# typed); otherwise the number is put back and the user is told why.
+function roll_row_is_empty(d) {
+	return !(flt(d.a_pcs) || flt(d.b_pcs) || flt(d.c_pcs) || flt(d.cut_pcs) || flt(d.weight) || (d.roll_number || "").trim());
+}
 
-	let n = cint(row.no_of_rolls);
-	if (n <= 0) {
-		return;
-	}
+function sync_rolls(frm, cdt, cdn) {
+	let row = locals[cdt][cdn];
+	let n = Math.max(cint(row.no_of_rolls), 0);
 
 	if (!row.row_key) {
 		// Fallback for a row that didn't go through the Get Items From
@@ -190,15 +178,28 @@ function maybe_generate_rolls(frm, cdt, cdn) {
 		row = locals[cdt][cdn];
 	}
 
-	for (let i = 1; i <= n; i++) {
-		frm.add_child("details", {
-			item_row: row.row_key,
-			finish_item: row.finish_item,
-			roll_no: i
-		});
+	let existing = (frm.doc.details || []).filter((d) => d.item_row === row.row_key);
+
+	if (n > existing.length) {
+		for (let i = existing.length + 1; i <= n; i++) {
+			frm.add_child("details", {
+				item_row: row.row_key,
+				finish_item: row.finish_item,
+				roll_no: i
+			});
+		}
+	} else if (n < existing.length) {
+		let surplus = existing.slice(n);
+		if (!surplus.every(roll_row_is_empty)) {
+			frappe.msgprint(__("Rolls {0} to {1} already have pieces, weight or a Roll#. Delete those rows from the Details table first.", [n + 1, existing.length]));
+			frappe.model.set_value(cdt, cdn, "no_of_rolls", existing.length);
+			return;
+		}
+		surplus.forEach((d) => frappe.model.clear_doc(d.doctype, d.name));
+		(frm.doc.details || []).forEach((d, i) => (d.idx = i + 1));
 	}
 
-	frappe.model.set_value(cdt, cdn, "details_generated", 1);
+	frappe.model.set_value(cdt, cdn, "details_generated", n > 0 ? 1 : 0);
 	frm.refresh_field("details");
 	recalc_item_row_totals(frm, row.row_key);
 }

@@ -691,7 +691,10 @@ def create_manufacture_stock_entry_for_row(doc, row):
 	finished_row["custom_total_lbs"] = total_lbs
 	# Rolls and Weight (Kg) of this Daily Loom Production row, shown on the
 	# finished row (Stock Entry Detail custom fields).
-	finished_row["custom_no_of_rolls"] = flt(row.no_of_rolls)
+	# Roll # is typed by hand (one roll number per row); documents made before it existed still use No of Rolls
+	roll_number = (row.get("roll_number") or "").strip()
+	finished_row["custom_no_of_rolls"] = 1 if roll_number else flt(row.no_of_rolls)
+	finished_row["custom_roll_no"] = roll_number
 	finished_row["custom_weight_kgs"] = flt(row.weight_kg)
 	if greige_batch:
 		finished_row["batch_no"] = greige_batch
