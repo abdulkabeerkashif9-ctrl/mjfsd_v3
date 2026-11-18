@@ -160,11 +160,12 @@ function make_row_key() {
 }
 
 // Keeps the Details (Rolls) rows of an Items row equal to its No. of Rolls:
-//   more rolls -> the missing rows are added (Sr # continues, Roll# left empty for the user);
-//   fewer rolls -> rows are removed from the end, but only while they are still empty
-//   (no pcs, weight or Roll# typed); otherwise the number is put back and the user is told why.
-function roll_row_is_empty(d) {
-	return !(flt(d.a_pcs) || flt(d.b_pcs) || flt(d.c_pcs) || flt(d.cut_pcs) || flt(d.weight) || (d.roll_number || "").trim());
+//   more rolls -> the missing rows are added; Roll# is pre-filled with the next number and can be overwritten;
+//   fewer rolls -> rows are removed from the end, but only while they are still untouched
+//   (no pcs or weight typed, Roll# still the pre-filled number); otherwise the number is put back and the user is told why.
+function roll_row_is_empty(d, position) {
+	let roll = String(d.roll_no || "").trim();
+	return !(flt(d.a_pcs) || flt(d.b_pcs) || flt(d.c_pcs) || flt(d.cut_pcs) || flt(d.weight)) && (roll === "" || roll === String(position));
 }
 
 function sync_rolls(frm, cdt, cdn) {
@@ -185,13 +186,13 @@ function sync_rolls(frm, cdt, cdn) {
 			frm.add_child("details", {
 				item_row: row.row_key,
 				finish_item: row.finish_item,
-				roll_no: i
+				roll_no: String(i)
 			});
 		}
 	} else if (n < existing.length) {
 		let surplus = existing.slice(n);
-		if (!surplus.every(roll_row_is_empty)) {
-			frappe.msgprint(__("Rolls {0} to {1} already have pieces, weight or a Roll#. Delete those rows from the Details table first.", [n + 1, existing.length]));
+		if (!surplus.every((d, k) => roll_row_is_empty(d, n + k + 1))) {
+			frappe.msgprint(__("Rolls {0} to {1} already have pieces, weight or their own Roll#. Delete those rows from the Details table first.", [n + 1, existing.length]));
 			frappe.model.set_value(cdt, cdn, "no_of_rolls", existing.length);
 			return;
 		}

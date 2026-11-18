@@ -8,7 +8,6 @@
   "item_row",
   "finish_item",
   "roll_no",
-  "roll_number",
   "column_break_1",
   "a_pcs",
   "b_pcs",
@@ -40,17 +39,9 @@
   },
   {
    "fieldname": "roll_no",
-   "fieldtype": "Int",
-   "label": "Sr #",
-   "read_only": 1,
-   "in_list_view": 1
-  },
-  {
-   "fieldname": "roll_number",
    "fieldtype": "Data",
    "label": "Roll#",
-   "in_list_view": 1,
-   "columns": 1
+   "in_list_view": 1
   },
   {
    "fieldname": "column_break_1",
@@ -110,7 +101,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-11-18 10:00:00.000000",
+ "modified": "2026-11-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Loom Production",
  "name": "Weaving Receipt Detail",
