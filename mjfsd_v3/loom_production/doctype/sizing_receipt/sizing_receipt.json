@@ -191,7 +191,6 @@
    "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
-   "default": "Cutpiece wastage - ET",
    "fieldname": "waste_account",
    "fieldtype": "Link",
    "hidden": 1,

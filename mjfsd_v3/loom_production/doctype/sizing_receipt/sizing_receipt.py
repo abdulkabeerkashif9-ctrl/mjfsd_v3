@@ -25,6 +25,9 @@ class SizingReceipt(Document):
 		validate_before_submit(self)
 
 	def validate(self):
+		# hidden legacy field; a value pointing to an account that does not exist would fail link validation on every save
+		if self.get("waste_account") and not frappe.db.exists("Account", self.waste_account):
+			self.waste_account = None
 		warehouse_defaults.fill_empty(self, {
 			"source_warehouse": "sizing_receipt_source_warehouse",
 			"target_warehouse": "sizing_receipt_target_warehouse",

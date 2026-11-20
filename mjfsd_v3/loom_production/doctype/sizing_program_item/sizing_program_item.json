@@ -284,7 +284,6 @@
    "read_only": 1
   },
   {
-   "default": "Cutpiece wastage - ET",
    "fieldname": "waste_account",
    "fieldtype": "Link",
    "label": "Waste Account",
