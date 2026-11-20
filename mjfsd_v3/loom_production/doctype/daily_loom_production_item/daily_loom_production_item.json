@@ -37,15 +37,22 @@
   "has_fancy",
   "pile_warehouse",
   "pile_beam",
+  "pile_beam_balance",
+  "pile_consumption_meters",
+  "end_pile_beam",
   "ground_warehouse",
   "ground_beam",
+  "ground_beam_balance",
+  "ground_consumption_meters",
+  "end_ground_beam",
   "weft_warehouse",
   "fancy_warehouse",
   "raw_material_selection",
   "raw_material_items",
   "raw_material_qty",
   "raw_material_warehouses",
-  "stock_entry"
+  "stock_entry",
+  "beam_end_stock_entry"
  ],
  "fields": [
   {
@@ -364,6 +371,61 @@
    "no_copy": 1,
    "options": "Stock Entry",
    "read_only": 1
+  },
+  {
+   "fieldname": "pile_beam_balance",
+   "fieldtype": "Float",
+   "label": "Pile Beam Balance",
+   "read_only": 1,
+   "no_copy": 1,
+   "depends_on": "eval:doc.has_pile",
+   "description": "Stock of the selected Pile Beam batch less what earlier rows of this document use."
+  },
+  {
+   "fieldname": "pile_consumption_meters",
+   "fieldtype": "Float",
+   "label": "Pile Consumption Meters",
+   "read_only": 1,
+   "no_copy": 1,
+   "depends_on": "eval:doc.has_pile"
+  },
+  {
+   "fieldname": "end_pile_beam",
+   "fieldtype": "Check",
+   "label": "End Pile Beam",
+   "depends_on": "eval:doc.has_pile",
+   "description": "On submit the remaining qty of this batch is issued (Material Issue)."
+  },
+  {
+   "fieldname": "ground_beam_balance",
+   "fieldtype": "Float",
+   "label": "Ground Beam Balance",
+   "read_only": 1,
+   "no_copy": 1,
+   "depends_on": "eval:doc.has_ground"
+  },
+  {
+   "fieldname": "ground_consumption_meters",
+   "fieldtype": "Float",
+   "label": "Ground Consumption Meters",
+   "read_only": 1,
+   "no_copy": 1,
+   "depends_on": "eval:doc.has_ground"
+  },
+  {
+   "fieldname": "end_ground_beam",
+   "fieldtype": "Check",
+   "label": "End Ground Beam",
+   "depends_on": "eval:doc.has_ground",
+   "description": "On submit the remaining qty of this batch is issued (Material Issue)."
+  },
+  {
+   "fieldname": "beam_end_stock_entry",
+   "fieldtype": "Data",
+   "label": "Beam End Stock Entry",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "index_web_pages_for_search": 1,

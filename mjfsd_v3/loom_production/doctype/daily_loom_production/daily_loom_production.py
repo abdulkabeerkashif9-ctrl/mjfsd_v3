@@ -17,6 +17,8 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt
 
 from mjfsd_v3.loom_production.events.create_stock_entry_from_daily_towel_production import (
+	apply_beam_balances,
+	create_beam_end_entries,
 	create_stock_entries,
 	cancel_linked_stock_entries,
 	get_greige_weight,
@@ -135,6 +137,9 @@ class DailyLoomProduction(Document):
 		# total in daily_loom_production.js) so it can't be edited around.
 		self.total_finish_qty = sum(flt(row.finish_qty) for row in self.items)
 
+		# Pile / Ground beam consumption and the running balance of each beam batch
+		apply_beam_balances(self)
+
 	def validate_commercial_row(self, row):
 		"""Commercial rows run off a submitted Weaving Contract - no Sales
 		Order, no Towel Costing Sheet."""
@@ -160,6 +165,7 @@ class DailyLoomProduction(Document):
 		# Towel Production will contain multiple entries so multiple
 		# manufacture entries will be created.").
 		create_stock_entries(self)
+		create_beam_end_entries(self)
 
 	def on_cancel(self):
 		cancel_linked_stock_entries(self)

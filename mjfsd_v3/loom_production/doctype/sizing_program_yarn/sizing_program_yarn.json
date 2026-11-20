@@ -27,6 +27,7 @@
   "balance_net_meter",
   "yarn_consumption_per_meter",
   "lbs",
+  "sizing_rate",
   "balance_yarn",
   "bags_issue",
   "po_ref",
@@ -209,6 +210,14 @@
    "label": "Beam Item",
    "options": "Item",
    "description": "Beam item this row produces (e.g. BEAM-Pile-... / BEAM-Ground-...)."
+  },
+  {
+   "fieldname": "sizing_rate",
+   "fieldtype": "Currency",
+   "label": "Sizing Rate",
+   "in_list_view": 1,
+   "default": "0",
+   "description": "Sizing rate of this beam (per LBS)."
   }
  ],
  "index_web_pages_for_search": 1,

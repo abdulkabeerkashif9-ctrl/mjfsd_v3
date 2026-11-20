@@ -123,9 +123,17 @@ frappe.ui.form.on('Daily Loom Production Item', {
 	},
 	pile_beam: function (frm, cdt, cdn) {
 		default_beam_warehouse(cdt, cdn, 'pile');
+		recalc_beam_balances(frm);
 	},
 	ground_beam: function (frm, cdt, cdn) {
 		default_beam_warehouse(cdt, cdn, 'ground');
+		recalc_beam_balances(frm);
+	},
+	pile_warehouse: function (frm) {
+		recalc_beam_balances(frm);
+	},
+	ground_warehouse: function (frm) {
+		recalc_beam_balances(frm);
 	},
 	a_qty: function (frm, cdt, cdn) {
 		recalc_finish_qty(frm, cdt, cdn);
@@ -143,6 +151,7 @@ frappe.ui.form.on('Daily Loom Production Item', {
 		recalc_metrics(frm, cdt, cdn);
 		recalc_total_greige_weight(frm, cdt, cdn);
 		recalculate_total_finish_qty(frm);
+		recalc_beam_balances(frm);
 	},
 	greige_weight: function (frm, cdt, cdn) {
 		recalc_total_greige_weight(frm, cdt, cdn);
@@ -152,8 +161,61 @@ frappe.ui.form.on('Daily Loom Production Item', {
 	},
 	items_remove: function (frm) {
 		recalculate_total_finish_qty(frm);
+		recalc_beam_balances(frm);
 	}
 });
+
+// Pile / Ground Consumption Meters of every row and the balance of its beam batch. One batch can be used on
+// several rows, so a row's balance = stock of the batch less the consumption of the rows above it
+// (9000 -> Roll#1 uses 2000 -> Roll#2 sees 7000, uses 1500 -> Roll#3 sees 5500).
+// Live preview only - daily_loom_production.py recomputes the same on save.
+function recalc_beam_balances(frm) {
+	if (frm.doc.docstatus !== 0) {
+		return;
+	}
+	const rows = frm.doc.items || [];
+	const jobs = [];
+	rows.forEach(function (row) {
+		['Pile', 'Ground'].forEach(function (beam_type) {
+			const key = beam_type.toLowerCase();
+			const batch = row[key + '_beam'];
+			if (!(row['has_' + key] && batch && row.item && (frm.doc.commercial ? row.weaving_contract : row.sales_order))) {
+				jobs.push(Promise.resolve({ row: row, key: key, batch: null }));
+				return;
+			}
+			jobs.push(
+				frappe.xcall('mjfsd_v3.loom_production.events.create_stock_entry_from_daily_towel_production.get_beam_row_figures', {
+					beam_type: beam_type,
+					batch: batch,
+					finish_qty: flt(row.finish_qty),
+					sales_order: frm.doc.commercial ? null : row.sales_order,
+					item_code: row.item,
+					weaving_contract: frm.doc.commercial ? row.weaving_contract : null,
+					warehouse: row[key + '_warehouse'] || null
+				}).then(function (res) {
+					return { row: row, key: key, batch: batch, res: res };
+				}).catch(function () {
+					return { row: row, key: key, batch: null };
+				})
+			);
+		});
+	});
+	Promise.all(jobs).then(function (results) {
+		const used = {};
+		// results are in row order, Pile before Ground
+		results.forEach(function (r) {
+			let balance = 0, consumption = 0;
+			if (r.batch) {
+				balance = flt(r.res.stock) - flt(used[r.batch]);
+				consumption = flt(r.res.consumption);
+				used[r.batch] = flt(used[r.batch]) + consumption;
+			}
+			r.row[r.key + '_beam_balance'] = balance;
+			r.row[r.key + '_consumption_meters'] = consumption;
+		});
+		frm.refresh_field('items');
+	});
+}
 
 // 2026-09-28 - "Finish Qty (Read only) = A Qty + B Qty + C Qty + Cut Pcs
 // Qty" (your words). Live preview only - daily_loom_production.py's own

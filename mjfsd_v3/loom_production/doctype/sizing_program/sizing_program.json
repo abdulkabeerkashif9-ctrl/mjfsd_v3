@@ -104,7 +104,8 @@
    "description": "2026-09-28 (feature v3) - new field, per your request. Carried onto the Sizing Receipt created from this Sizing Program (see the \"Create > Sizing Receipt\" button in sizing_program.js).",
    "fieldname": "sizing_rate",
    "fieldtype": "Currency",
-   "label": "Sizing Rate"
+   "label": "Sizing Rate",
+   "depends_on": "eval:!(doc.yarn_items||[]).length"
   },
   {
    "fieldname": "quality",

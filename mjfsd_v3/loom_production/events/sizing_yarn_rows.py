@@ -150,6 +150,11 @@ def validate_program(doc):
 		if not flt(row.sizing_beam):
 			frappe.throw(_("Row {0}: Beam No is required. Use the same Beam No on rows that share a beam.").format(row.idx))
 	doc.lbs_issue = sum(flt(r.lbs_issue) for r in doc.yarn_items)
+	# header rate = LBS-weighted average of the beam-wise rates
+	total_lbs = sum(flt(r.lbs) for r in doc.yarn_items)
+	doc.sizing_rate = (
+		sum(flt(r.sizing_rate) * flt(r.lbs) for r in doc.yarn_items) / total_lbs if total_lbs else flt(doc.yarn_items[0].sizing_rate)
+	)
 	if not doc.get("weaving_contract"):
 		doc.weaving_contract = next((r.weaving_contract for r in doc.yarn_items if r.weaving_contract), None)
 	if not doc.get("fabric_construction"):
@@ -276,7 +281,7 @@ def make_sizing_receipt(sizing_program, sizing_beam=None, sizing_beams=None, bea
 					"beem_length": length,
 					"ends": r.ends,
 					"lbs": flt(r.lbs) * share,
-					"sizing_rate": sp.sizing_rate,
+					"sizing_rate": flt(r.get("sizing_rate")) or flt(sp.sizing_rate),
 					"sizing_program": sp.name,
 					"fabric_construction": r.finish_item,
 					"sizing_beam": r.sizing_beam,

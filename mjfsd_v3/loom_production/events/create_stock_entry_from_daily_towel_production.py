@@ -505,6 +505,132 @@ def get_beam_batches(doctype, txt, searchfield, start, page_len, filters):
 	)
 
 
+def _beam_receipt(batch_name):
+	"""(Batch, Sizing Receipt) a Pile / Ground beam batch came from."""
+	batch = frappe.db.get_value("Batch", batch_name, ["item", "reference_doctype", "reference_name"], as_dict=True)
+	receipt = (
+		frappe.db.get_value(
+			"Sizing Receipt",
+			batch.reference_name,
+			["lbs", "length", "target_warehouse", "final_cost_of_beam", "beem_length"],
+			as_dict=True,
+		)
+		if batch and batch.reference_doctype == "Sizing Receipt"
+		else None
+	)
+	return batch, receipt
+
+
+def _beam_meters(lines, receipt, finish_qty):
+	"""Meters of the beam used for `finish_qty` pieces: (yarn per piece / lbs per meter of the beam) x pieces.
+	The Stock Entry consumes exactly this figure."""
+	ratio = flt(receipt.lbs) / flt(receipt.length) if flt(receipt.length) else 0
+	per_pc = sum(r["per_pc"] for r in lines)
+	return (per_pc / ratio) * flt(finish_qty) if ratio else 0
+
+
+def beam_stock(batch_name, warehouse=None):
+	"""Actual stock of a beam batch (in `warehouse` when given)."""
+	try:
+		from erpnext.stock.doctype.batch.batch import get_batch_qty
+
+		if warehouse:
+			return flt(get_batch_qty(batch_name, warehouse))
+		return sum(flt(b.get("qty")) for b in (get_batch_qty(batch_no=batch_name) or []))
+	except ImportError:
+		return flt(frappe.db.get_value("Batch", batch_name, "batch_qty"))
+
+
+@frappe.whitelist()
+def get_beam_row_figures(beam_type, batch, finish_qty, sales_order=None, item_code=None, weaving_contract=None, warehouse=None):
+	"""Consumption (meters) of one Daily Loom Production row on this beam batch and the batch's actual stock."""
+	if not batch:
+		return {"consumption": 0, "stock": 0}
+	reqs = _get_requirements(sales_order, item_code, weaving_contract or None)
+	lines = [r for r in reqs if (r.get("for") or "").strip() == beam_type]
+	_, receipt = _beam_receipt(batch)
+	return {
+		"consumption": _beam_meters(lines, receipt, finish_qty) if receipt and lines else 0,
+		"stock": beam_stock(batch, warehouse or (receipt.target_warehouse if receipt else None)),
+	}
+
+
+def apply_beam_balances(doc):
+	"""Server twin of the form's live figures: per row and beam type, Consumption Meters and the Balance of the batch
+	after the rows above it (one batch can be used on many rows)."""
+	commercial = bool(doc.get("commercial"))
+	used, stock = {}, {}
+	for row in doc.get("items") or []:
+		for beam_type in ("Pile", "Ground"):
+			key = beam_type.lower()
+			batch_name = row.get(f"{key}_beam")
+			if not (row.get(f"has_{key}") and batch_name):
+				row.set(f"{key}_beam_balance", 0)
+				row.set(f"{key}_consumption_meters", 0)
+				continue
+			wh = row.get(f"{key}_warehouse")
+			if (batch_name, wh) not in stock:
+				stock[(batch_name, wh)] = get_beam_row_figures(beam_type, batch_name, 0, row.sales_order, row.item, row.weaving_contract if commercial else None, wh)["stock"]
+			figures = get_beam_row_figures(
+				beam_type, batch_name, row.finish_qty, row.sales_order, row.item, row.weaving_contract if commercial else None, wh
+			)
+			balance = stock[(batch_name, wh)] - used.get(batch_name, 0)
+			row.set(f"{key}_beam_balance", balance)
+			row.set(f"{key}_consumption_meters", figures["consumption"])
+			if figures["consumption"] > balance + 0.001:
+				frappe.throw(
+					"Row {}: {} Beam {} has {} m left but this row needs {} m.".format(
+						row.idx, beam_type, batch_name, round(balance, 3), round(figures["consumption"], 3)
+					)
+				)
+			used[batch_name] = used.get(batch_name, 0) + figures["consumption"]
+
+
+def create_beam_end_entries(doc):
+	"""Rows ticked 'End Pile Beam' / 'End Ground Beam': after the Manufacture entries, the rest of that batch is
+	issued out of stock (Material Issue), once per batch."""
+	done = set()
+	for row in reversed(list(doc.get("items") or [])):
+		names = []
+		for beam_type in ("Pile", "Ground"):
+			key = beam_type.lower()
+			batch_name = row.get(f"{key}_beam")
+			if not (row.get(f"end_{key}_beam") and batch_name) or batch_name in done:
+				continue
+			done.add(batch_name)
+			wh = row.get(f"{key}_warehouse")
+			remaining = beam_stock(batch_name, wh)
+			if remaining <= 0.0005:
+				continue
+			batch, receipt = _beam_receipt(batch_name)
+			rate = (
+				flt(receipt.final_cost_of_beam) / flt(receipt.beem_length) if receipt and flt(receipt.beem_length) else 0
+			)
+			se = frappe.new_doc("Stock Entry")
+			se.stock_entry_type = "Material Issue"
+			se.purpose = "Material Issue"
+			se.set_posting_time = 1
+			se.posting_date = doc.date
+			se.custom_daily_towel_production = doc.name
+			se.use_serial_batch_fields = 1
+			line = {
+				"item_code": batch.item,
+				"qty": remaining,
+				"uom": frappe.db.get_value("Item", batch.item, "stock_uom"),
+				"s_warehouse": wh or (receipt.target_warehouse if receipt else None),
+				"batch_no": batch_name,
+				"use_serial_batch_fields": 1,
+			}
+			if rate:
+				line.update({"basic_rate": rate, "basic_amount": rate * remaining, "set_basic_rate_manually": 1})
+			se.append("items", line)
+			se.save(ignore_permissions=True)
+			se.submit()
+			names.append(se.name)
+		if names:
+			row.db_set("beam_end_stock_entry", ",".join(names), update_modified=False)
+
+
 def _consumption_rows(row, commercial):
 	"""Raw material rows for one Daily Loom Production row: Pile / Ground are
 	consumed from the Beam Batch picked on the row (rate from that batch's
@@ -520,23 +646,11 @@ def _consumption_rows(row, commercial):
 		batch_name = row.get(f"{beam_type.lower()}_beam")
 		if not batch_name:
 			frappe.throw("Row {}: select the {} Beam batch.".format(row.idx, beam_type))
-		batch = frappe.db.get_value("Batch", batch_name, ["item", "reference_doctype", "reference_name"], as_dict=True)
-		receipt = (
-			frappe.db.get_value(
-				"Sizing Receipt",
-				batch.reference_name,
-				["lbs", "length", "target_warehouse", "final_cost_of_beam", "beem_length"],
-				as_dict=True,
-			)
-			if batch and batch.reference_doctype == "Sizing Receipt"
-			else None
-		)
+		batch, receipt = _beam_receipt(batch_name)
 		if not receipt:
 			frappe.throw("Row {}: Batch {} was not created from a Sizing Receipt.".format(row.idx, batch_name))
 
-		ratio = flt(receipt.lbs) / flt(receipt.length) if flt(receipt.length) else 0
-		per_pc = sum(r["per_pc"] for r in lines)
-		qty = (per_pc / ratio) * finish_qty if ratio else 0
+		qty = _beam_meters(lines, receipt, finish_qty)
 		rate = flt(receipt.final_cost_of_beam) / flt(receipt.beem_length) if flt(receipt.beem_length) else 0
 		out.append({
 			"item_code": batch.item,
@@ -718,7 +832,13 @@ def create_stock_entries(doc):
 
 def cancel_linked_stock_entries(doc):
 	"""Called from Daily Towel Production's on_cancel. Cancels every
-	row's tracked Stock Entry."""
+	row's tracked Stock Entry (beam-end Material Issues first)."""
+	for row in doc.items:
+		for name in (row.get("beam_end_stock_entry") or "").split(","):
+			if name and frappe.db.exists("Stock Entry", name):
+				se = frappe.get_doc("Stock Entry", name)
+				if se.docstatus == 1:
+					se.cancel()
 	for row in doc.items:
 		if row.stock_entry and frappe.db.exists("Stock Entry", row.stock_entry):
 			se = frappe.get_doc("Stock Entry", row.stock_entry)
