@@ -50,18 +50,21 @@ def open_stock_entry(sizing_program_name):
 			frappe.throw(_("Set Brand (the yarn item) on {0} first.").format(sp.name))
 		lines = [(sp.item, flt(sp.bags_issue) * 100)]
 
+	from mjfsd_v3.loom_production.events.yarn_batches import append_yarn_rows, contract_batches, sizing_program_contracts
+
+	contracts = sizing_program_contracts(sp)
 	for item_code, qty in lines:
 		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
 		if not stock_uom:
 			frappe.throw(_("Item {0} not found.").format(item_code))
-		se.append("items", {
-			"item_code": item_code,
-			"qty": qty,
+		base = {
 			"s_warehouse": SOURCE_WAREHOUSE,
 			"t_warehouse": TARGET_WAREHOUSE,
 			"uom": stock_uom,
 			"stock_uom": stock_uom,
 			"conversion_factor": 1,
-		})
+		}
+		# yarn batches received on the program's Weaving Contract(s), oldest first (editable on the entry)
+		append_yarn_rows(se, base, item_code, qty, contract_batches(item_code, contracts), SOURCE_WAREHOUSE)
 
 	return se

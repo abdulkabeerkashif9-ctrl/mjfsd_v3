@@ -35,8 +35,10 @@ class SizingProgram(Document):
 			se.posting_date = self.date
 			se.sizing_program = self.name
 
+			from mjfsd_v3.loom_production.events.yarn_batches import batch_row_fields
+
 			for row in self.stock_return_item:
-				se.append("items", {
+				line = {
 					"item_code": row.yarn_item,
 					"qty": row.qty_lbs,
 					"uom": "Lbs",
@@ -44,7 +46,10 @@ class SizingProgram(Document):
 					"t_warehouse": row.target_warehouse,
 					"conversion_factor": 1,
 					"stock_uom": "Lbs"
-				})
+				}
+				if row.get("batch_no"):
+					line.update(batch_row_fields(row.batch_no))
+				se.append("items", line)
 
 			se.save()
 			se.submit()

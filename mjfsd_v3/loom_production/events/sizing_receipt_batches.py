@@ -106,9 +106,31 @@ def _plan_batches(doc):
 	return [(bid, doc.item, beam_type) for bid in get_batch_ids(doc)]
 
 
+def _yarn_reference(doc):
+	"""Fields of a beam batch that point back to the yarn it was made from (main = first yarn batch consumed)."""
+	from mjfsd_v3.loom_production.events.create_stock_entry_from_sizing_receipt import _source_warehouse
+	from mjfsd_v3.loom_production.events.yarn_batches import batch_info, main_yarn_batch
+
+	try:
+		main = main_yarn_batch(doc, _source_warehouse(doc))
+	except Exception:
+		frappe.clear_last_message()
+		main = None
+	if not main:
+		return {}
+	info = batch_info(main)
+	return {
+		"custom_yarn_batch": main,
+		"custom_brand": info.get("brand"),
+		"custom_paper_tip": info.get("paper_tip"),
+		"custom_weaving_contract": info.get("weaving_contract"),
+	}
+
+
 def create_batches(doc):
-	"""One Batch per beam, named <Set No>-<beam number>, with Beam Type set."""
+	"""One Batch per beam, named <Set No>-<beam number>, with Beam Type set and a reference to the yarn batch."""
 	names = []
+	yarn_ref = _yarn_reference(doc)
 
 	for batch_id, item, beam_type in _plan_batches(doc):
 		_ensure_item_has_batches(item)
@@ -132,6 +154,7 @@ def create_batches(doc):
 			batch.reference_name = doc.name
 			batch.disabled = 0
 			batch.beam_type = beam_type
+			batch.update(yarn_ref)
 			batch.save(ignore_permissions=True)
 		else:
 			batch = frappe.new_doc("Batch")
@@ -140,6 +163,7 @@ def create_batches(doc):
 			batch.reference_doctype = "Sizing Receipt"
 			batch.reference_name = doc.name
 			batch.beam_type = beam_type
+			batch.update(yarn_ref)
 			batch.insert(ignore_permissions=True)
 		names.append(batch.name)
 

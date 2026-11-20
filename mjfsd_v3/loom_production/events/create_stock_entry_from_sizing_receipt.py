@@ -5,6 +5,11 @@ import frappe
 from frappe.utils import flt
 
 from mjfsd_v3.loom_production.warehouse_defaults import pick
+from mjfsd_v3.loom_production.events.yarn_batches import (
+	append_yarn_rows,
+	batch_row_fields,
+	consumption_candidates,
+)
 
 
 def _source_warehouse(sizing_receipt):
@@ -65,9 +70,7 @@ def create_manufacture_stock_entry(sizing_receipt, batches=None):
 
 	for yarn_item, yarn_lbs in consumption_lines(sizing_receipt):
 		yarn_item_rate = flt(frappe.db.get_value("Item", yarn_item, "valuation_rate"))
-		se.append("items", {
-			"item_code": yarn_item,
-			"qty": yarn_lbs,
+		base = {
 			"uom": "Lbs",
 			"stock_uom": "Lbs",
 			"conversion_factor": 1,
@@ -76,7 +79,9 @@ def create_manufacture_stock_entry(sizing_receipt, batches=None):
 			"basic_amount": yarn_item_rate * flt(yarn_lbs),
 			"set_basic_rate_manually": 1,
 			"allow_zero_valuation_rate": allow_zero_valuation,
-		})
+		}
+		# the yarn batches issued to this Sizing Program (Brand / PaperTip / Batch on the row)
+		append_yarn_rows(se, base, yarn_item, yarn_lbs, consumption_candidates(sizing_receipt.sizing_program, yarn_item), source_warehouse)
 
 	# Finished item: the Beam item, in Meter. Length (Beam No x Beem Length,
 	# round 5 formula) is the field already carrying this beam's total
@@ -204,9 +209,7 @@ def _create_entries_per_beam_item(sizing_receipt, batches):
 
 		for yarn_item, yarn_lbs in entry["yarn"].items():
 			rate = flt(frappe.db.get_value("Item", yarn_item, "valuation_rate"))
-			se.append("items", {
-				"item_code": yarn_item,
-				"qty": yarn_lbs,
+			base = {
 				"uom": "Lbs",
 				"stock_uom": "Lbs",
 				"conversion_factor": 1,
@@ -215,7 +218,8 @@ def _create_entries_per_beam_item(sizing_receipt, batches):
 				"basic_amount": rate * flt(yarn_lbs),
 				"set_basic_rate_manually": 1,
 				"allow_zero_valuation_rate": allow_zero,
-			})
+			}
+			append_yarn_rows(se, base, yarn_item, yarn_lbs, consumption_candidates(sizing_receipt.sizing_program, yarn_item), source_warehouse)
 
 		per_lbs = entry["cost"] / entry["lbs"] if entry["lbs"] else 0
 		for batch, qty, rate in entry["beams"]:
@@ -261,7 +265,7 @@ def create_material_transfer_stock_entry(sizing_receipt):
 	se.sizing_program = sizing_receipt.sizing_program
 
 	for row in sizing_receipt.stock_return_item:
-		se.append("items", {
+		line = {
 			"item_code": row.yarn_item,
 			"qty": row.qty_lbs,
 			"uom": "Lbs",
@@ -269,7 +273,10 @@ def create_material_transfer_stock_entry(sizing_receipt):
 			"conversion_factor": 1,
 			"s_warehouse": source_warehouse,
 			"t_warehouse": row.target_warehouse,
-		})
+		}
+		if row.get("batch_no"):
+			line.update(batch_row_fields(row.batch_no))
+		se.append("items", line)
 
 	se.save(ignore_permissions=True)
 	se.submit()

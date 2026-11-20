@@ -185,8 +185,10 @@ def make_stock_entry_for_stock_return_item(sizing_program):
         se.custom_sizing_program_stock_entry = sizing_program.name
 
         # Iterate over each row in the stock_return_item child table
+        from mjfsd_v3.loom_production.events.yarn_batches import batch_row_fields
+
         for row in sizing_program.stock_return_item:
-            se.append("items", {
+            line = {
                 "item_code": row.yarn_item,
                 "qty": row.qty_lbs,
                 "uom": "Lbs",
@@ -194,7 +196,10 @@ def make_stock_entry_for_stock_return_item(sizing_program):
                 "t_warehouse": row.target_warehouse,
                 "conversion_factor": 1,
                 "stock_uom":"Lbs"
-            })
+            }
+            if row.get("batch_no"):
+                line.update(batch_row_fields(row.batch_no))
+            se.append("items", line)
 
         # Save and submit the Stock Entry
 

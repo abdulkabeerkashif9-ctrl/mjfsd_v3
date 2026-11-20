@@ -9,7 +9,10 @@
   "yarn_item",
   "type",
   "qty_lbs",
-  "target_warehouse"
+  "target_warehouse",
+  "batch_no",
+  "brand",
+  "paper_tip"
  ],
  "fields": [
   {
@@ -38,6 +41,31 @@
    "label": "Target Warehouse",
    "options": "Warehouse",
    "reqd": 1
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Link",
+   "options": "Batch",
+   "label": "Batch",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Link",
+   "options": "Brand",
+   "label": "Brand",
+   "read_only": 1,
+   "in_list_view": 1,
+   "fetch_from": "batch_no.custom_brand"
+  },
+  {
+   "fieldname": "paper_tip",
+   "fieldtype": "Link",
+   "options": "PaperTip",
+   "label": "PaperTip",
+   "read_only": 1,
+   "in_list_view": 1,
+   "fetch_from": "batch_no.custom_paper_tip"
   }
  ],
  "index_web_pages_for_search": 1,
