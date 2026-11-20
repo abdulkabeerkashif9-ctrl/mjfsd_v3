@@ -81,7 +81,8 @@
    "label": "Beam No",
    "in_list_view": 1,
    "columns": 1,
-   "description": "Number of beams received (one Batch each)."
+   "description": "Number of beams received (one Batch each).",
+   "hidden": 1
   },
   {
    "fieldname": "beem_length",

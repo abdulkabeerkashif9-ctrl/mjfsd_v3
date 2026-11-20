@@ -21,7 +21,6 @@
   "lbs_per_bag",
   "cones_per_bag",
   "sizing_beam",
-  "warp_wastage_percent",
   "ends",
   "meter",
   "column_break_zeiw1",
@@ -153,13 +152,6 @@
    "label": "Sizing Beam",
    "precision": "2",
    "depends_on": "eval:!(doc.yarn_items||[]).length"
-  },
-  {
-   "default": "4",
-   "fieldname": "warp_wastage_percent",
-   "fieldtype": "Float",
-   "label": "Waste %",
-   "precision": "2"
   },
   {
    "fieldname": "ends",

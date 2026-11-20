@@ -125,7 +125,8 @@
   {
    "fieldname": "beam",
    "fieldtype": "Float",
-   "label": "No of Beams"
+   "label": "No of Beams",
+   "hidden": 1
   },
   {
    "fieldname": "quality",

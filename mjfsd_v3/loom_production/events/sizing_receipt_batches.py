@@ -31,7 +31,7 @@ def validate_before_submit(doc):
 				frappe.throw(_("Row {0}: enter Set No - it is used to name the Batches.").format(r.idx))
 		return
 	if cint(doc.get("beam_no")) < 1:
-		frappe.throw(_("Enter Beam No before submitting - one Batch is created for every beam."))
+		doc.beam_no = 1  # No of Beams is hidden: one beam unless the Meters per Beam say otherwise
 	if not cint(doc.get("set_no")):
 		frappe.throw(_("Enter Set No before submitting - it is used to name the Batches."))
 

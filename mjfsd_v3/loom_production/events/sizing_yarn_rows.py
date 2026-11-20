@@ -149,6 +149,18 @@ def validate_program(doc):
 			frappe.throw(_("Row {0}: Yarn Item is required.").format(row.idx))
 		if not flt(row.sizing_beam):
 			frappe.throw(_("Row {0}: Beam No is required. Use the same Beam No on rows that share a beam.").format(row.idx))
+	# the same Beam No can only be used with the same Beam Item and Yarn Item
+	first = {}
+	for r in doc.yarn_items:
+		key = flt(r.sizing_beam)
+		sig = (r.get("beam_item") or doc.get("item_returnable") or "", r.yarn_item)
+		if key in first and first[key][0] != sig:
+			frappe.throw(
+				_("Beam No {0}: row {1} and row {2} have a different Beam Item / Yarn Item. The same Beam No can only be used with the same Beam Item and Yarn Item.").format(
+					g_fmt(key), first[key][1], r.idx
+				)
+			)
+		first.setdefault(key, (sig, r.idx))
 	doc.lbs_issue = sum(flt(r.lbs_issue) for r in doc.yarn_items)
 	# header rate = LBS-weighted average of the beam-wise rates
 	total_lbs = sum(flt(r.lbs) for r in doc.yarn_items)

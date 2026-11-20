@@ -151,7 +151,8 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Beam No",
-   "depends_on": "eval:!(doc.yarn_items||[]).length"
+   "depends_on": "eval:!(doc.yarn_items||[]).length",
+   "hidden": 1
   },
   {
    "default": "0",

@@ -333,14 +333,6 @@ frappe.ui.form.on("Sizing Program", {
     ends: function (frm) {
         recalc_sizing(frm);
     },
-    warp_wastage_percent: function (frm) {
-        recalc_sizing(frm);
-        // rows with no Wastage % of their own follow the header value
-        (frm.doc.yarn_items || []).forEach(r => {
-            if (!flt(r.wastage_percent)) { r.wastage_percent = frm.doc.warp_wastage_percent; }
-            window.sizing_yarn_recalc_row(frm, r.doctype, r.name);
-        });
-    },
     meter: function (frm) {
         recalc_sizing(frm);
     },
@@ -367,7 +359,7 @@ function recalc_sizing(frm) {
     var yarn_count = flt(frm.doc.yarn_count);
     var ends = flt(frm.doc.ends);
     var meter = flt(frm.doc.meter);
-    var warp_wastage_percent = flt(frm.doc.warp_wastage_percent);
+    var warp_wastage_percent = 0; // the master Waste % field was removed; Wastage % is per row
     var warping_beam = flt(frm.doc.warping_beam);
     var sizing_beam = flt(frm.doc.sizing_beam);
     // 2026-09-28 fix - "bags issue = (lbs issue + wastage) / 100" (your
@@ -842,10 +834,21 @@ if (!window.__sizing_yarn_rows_loaded) {
         yarn_items_add: function (frm, cdt, cdn) {
             const r = locals[cdt][cdn];
             if (!flt(r.lbs_per_bag)) { r.lbs_per_bag = 100; }
-            if (frm.doc.warp_wastage_percent && !flt(r.wastage_percent)) { r.wastage_percent = frm.doc.warp_wastage_percent; }
             frm.refresh_field("yarn_items");
         }
     };
+    // The same Beam No can only be used with the same Beam Item and Yarn Item
+    const check_beam_rule = function (frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (!flt(row.sizing_beam)) { return; }
+        const item = (r) => r.beam_item || frm.doc.item_returnable || "";
+        const clash = (frm.doc.yarn_items || []).find(x => x.name !== row.name && flt(x.sizing_beam) === flt(row.sizing_beam)
+            && x.yarn_item && row.yarn_item && (x.yarn_item !== row.yarn_item || item(x) !== item(row)));
+        if (clash) {
+            frappe.msgprint(__("Beam No {0} is already used on row {1} with a different Beam Item / Yarn Item. The same Beam No can only be used with the same Beam Item and Yarn Item.", [row.sizing_beam, clash.idx]));
+        }
+    };
+    ["sizing_beam", "beam_item", "yarn_item"].forEach(f => { handlers[f] = function (frm, cdt, cdn) { check_beam_rule(frm, cdt, cdn); if (f === "yarn_item" || f === "beam_item") { window.sizing_yarn_recalc_row(frm, cdt, cdn); } }; });
     recalc_fields.forEach(f => { handlers[f] = function (frm, cdt, cdn) { window.sizing_yarn_recalc_row(frm, cdt, cdn); }; });
     frappe.ui.form.on("Sizing Program Yarn", handlers);
 }
@@ -879,7 +882,6 @@ function get_items_from_weaving_contracts(frm) {
                         ["weaving_contract", "finish_item", "yarn_item", "beam_item", "lbs_per_bag", "weaving_contract_lbs"].forEach(f => {
                             child[f] = row[f];
                         });
-                        if (frm.doc.warp_wastage_percent) { child.wastage_percent = frm.doc.warp_wastage_percent; }
                         added++;
                     });
                     if (!frm.doc.weaving_contract && selections.length) { frm.set_value("weaving_contract", selections[0]); }
