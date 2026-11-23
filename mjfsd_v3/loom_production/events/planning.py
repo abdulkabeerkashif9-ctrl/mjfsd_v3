@@ -17,7 +17,7 @@ def _tcs_weights(tcs, item_code):
 
 @frappe.whitelist()
 def get_order_items(sales_orders):
-	"""One row per Sales Order Item of the selected Sales Orders."""
+	"""One row per Sales Order Item of the selected Sales Orders. Order Qty = AB Qty (Qty when AB Qty is empty)."""
 	if isinstance(sales_orders, str):
 		sales_orders = json.loads(sales_orders)
 	out = []
@@ -25,7 +25,7 @@ def get_order_items(sales_orders):
 		for r in frappe.get_all(
 			"Sales Order Item",
 			filters={"parent": so, "parenttype": "Sales Order"},
-			fields=["name", "item_code", "qty", "custom_towel_costing_sheet"],
+			fields=["name", "item_code", "qty", "custom_ab_qty", "custom_towel_costing_sheet"],
 			order_by="idx asc",
 		):
 			finish, greige = _tcs_weights(r.custom_towel_costing_sheet, r.item_code)
@@ -33,7 +33,7 @@ def get_order_items(sales_orders):
 				{
 					"order_no": so,
 					"item": r.item_code,
-					"order_qty": flt(r.qty),
+					"order_qty": flt(r.custom_ab_qty) or flt(r.qty),  # AB Qty, else Qty
 					"finish_weight": finish,
 					"greige_weight": greige,
 					"sales_order_item": r.name,
