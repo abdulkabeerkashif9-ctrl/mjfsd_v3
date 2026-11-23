@@ -1,0 +1,178 @@
+{
+ "actions": [],
+ "creation": "2026-11-23 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-23 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Loom Production",
+ "name": "Planning",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "fields": [
+  {
+   "fieldname": "tab_orders",
+   "fieldtype": "Tab Break",
+   "label": "Orders"
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "default": "Today",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_order_qty",
+   "fieldtype": "Float",
+   "label": "Total Order Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_orders",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "select_orders",
+   "fieldtype": "Button",
+   "label": "Select Orders"
+  },
+  {
+   "fieldname": "orders",
+   "fieldtype": "Table",
+   "label": "Orders",
+   "options": "Planning Order"
+  },
+  {
+   "fieldname": "tab_yarn",
+   "fieldtype": "Tab Break",
+   "label": "Yarn Requirements"
+  },
+  {
+   "fieldname": "total_reqd_qty",
+   "fieldtype": "Float",
+   "label": "Total Reqd Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_reqd_bags",
+   "fieldtype": "Float",
+   "label": "Total Reqd Bags",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_yarn",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "fetch_yarn_requirements",
+   "fieldtype": "Button",
+   "label": "Fetch Yarn Requirements"
+  },
+  {
+   "fieldname": "yarn_requirements",
+   "fieldtype": "Table",
+   "label": "Yarn Requirements",
+   "options": "Planning Yarn"
+  },
+  {
+   "fieldname": "tab_weaving",
+   "fieldtype": "Tab Break",
+   "label": "Weaving"
+  },
+  {
+   "fieldname": "fetch_weaving_contracts",
+   "fieldtype": "Button",
+   "label": "Fetch Weaving Contracts"
+  },
+  {
+   "fieldname": "weaving",
+   "fieldtype": "Table",
+   "label": "Weaving",
+   "options": "Planning Weaving"
+  }
+ ],
+ "field_order": [
+  "tab_orders",
+  "date",
+  "column_break_1",
+  "total_order_qty",
+  "section_orders",
+  "select_orders",
+  "orders",
+  "tab_yarn",
+  "total_reqd_qty",
+  "column_break_2",
+  "total_reqd_bags",
+  "section_yarn",
+  "fetch_yarn_requirements",
+  "yarn_requirements",
+  "tab_weaving",
+  "fetch_weaving_contracts",
+  "weaving"
+ ],
+ "autoname": "PLN-.#####",
+ "track_changes": 1,
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  }
+ ]
+}

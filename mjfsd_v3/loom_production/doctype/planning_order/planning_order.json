@@ -1,0 +1,87 @@
+{
+ "actions": [],
+ "creation": "2026-11-23 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-23 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Loom Production",
+ "name": "Planning Order",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "fields": [
+  {
+   "fieldname": "order_no",
+   "fieldtype": "Link",
+   "label": "Order No.",
+   "options": "Sales Order",
+   "in_list_view": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "in_list_view": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "order_qty",
+   "fieldtype": "Float",
+   "label": "Order Qty",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "finish_weight",
+   "fieldtype": "Float",
+   "label": "Finish Weight",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "greige_weight",
+   "fieldtype": "Float",
+   "label": "Greige Weight",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sales_order_item",
+   "fieldtype": "Data",
+   "label": "Sales Order Item",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "towel_costing_sheet",
+   "fieldtype": "Link",
+   "label": "TCS Ref.",
+   "options": "Towel Costing Sheet",
+   "hidden": 1,
+   "read_only": 1
+  }
+ ],
+ "field_order": [
+  "order_no",
+  "item",
+  "order_qty",
+  "finish_weight",
+  "greige_weight",
+  "remarks",
+  "sales_order_item",
+  "towel_costing_sheet"
+ ],
+ "istable": 1,
+ "editable_grid": 1
+}

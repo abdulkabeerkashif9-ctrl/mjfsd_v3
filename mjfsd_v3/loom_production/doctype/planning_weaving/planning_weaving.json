@@ -1,0 +1,115 @@
+{
+ "actions": [],
+ "creation": "2026-11-23 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-23 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Loom Production",
+ "name": "Planning Weaving",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "fields": [
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "weaving_contract",
+   "fieldtype": "Link",
+   "label": "Weaving Contract",
+   "options": "Weaving Contract",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "fabric_item",
+   "fieldtype": "Link",
+   "label": "Fabric Item",
+   "options": "Item",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "contract_qty",
+   "fieldtype": "Float",
+   "label": "Contract Qty",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "weaver",
+   "fieldtype": "Link",
+   "label": "Weaver",
+   "options": "Supplier",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "weaving_type",
+   "fieldtype": "Link",
+   "label": "Weaving Type",
+   "options": "Weaving Type"
+  },
+  {
+   "fieldname": "yarn_status",
+   "fieldtype": "Select",
+   "label": "Yarn Status",
+   "options": "\nDispatched\nNot Dispatched\nPartially Dispatched",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "planned_start_date",
+   "fieldtype": "Date",
+   "label": "Planned Start Date"
+  },
+  {
+   "fieldname": "planned_end_date",
+   "fieldtype": "Date",
+   "label": "Planned End Date"
+  },
+  {
+   "fieldname": "no_of_looms",
+   "fieldtype": "Int",
+   "label": "No of Looms"
+  },
+  {
+   "fieldname": "received_qty",
+   "fieldtype": "Float",
+   "label": "Rcvd Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "balance_qty",
+   "fieldtype": "Float",
+   "label": "Balance Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "field_order": [
+  "sales_order",
+  "weaving_contract",
+  "fabric_item",
+  "contract_qty",
+  "weaver",
+  "weaving_type",
+  "yarn_status",
+  "planned_start_date",
+  "planned_end_date",
+  "no_of_looms",
+  "received_qty",
+  "balance_qty",
+  "remarks"
+ ],
+ "istable": 1,
+ "editable_grid": 1
+}

@@ -1,0 +1,98 @@
+{
+ "actions": [],
+ "creation": "2026-11-23 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-23 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Loom Production",
+ "name": "Planning Yarn",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "fields": [
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "reqd_by_date",
+   "fieldtype": "Date",
+   "label": "Reqd By Date",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "fabric_item",
+   "fieldtype": "Link",
+   "label": "Fabric Item",
+   "options": "Item",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "yarn_item",
+   "fieldtype": "Link",
+   "label": "Yarn Item",
+   "options": "Item",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "reqd_qty",
+   "fieldtype": "Float",
+   "label": "Reqd. Qty",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "po_qty",
+   "fieldtype": "Float",
+   "label": "PO Qty",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "received_qty",
+   "fieldtype": "Float",
+   "label": "Received Qty",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "balance_qty",
+   "fieldtype": "Float",
+   "label": "Balance Qty",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "reqd_bags",
+   "fieldtype": "Float",
+   "label": "Reqd Bags",
+   "hidden": 1,
+   "read_only": 1
+  }
+ ],
+ "field_order": [
+  "sales_order",
+  "reqd_by_date",
+  "fabric_item",
+  "yarn_item",
+  "reqd_qty",
+  "po_qty",
+  "received_qty",
+  "balance_qty",
+  "remarks",
+  "reqd_bags"
+ ],
+ "istable": 1,
+ "editable_grid": 1
+}
