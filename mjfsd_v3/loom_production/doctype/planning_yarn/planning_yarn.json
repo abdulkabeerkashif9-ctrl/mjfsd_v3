@@ -51,8 +51,7 @@
    "fieldname": "po_qty",
    "fieldtype": "Float",
    "label": "PO Qty",
-   "in_list_view": 1,
-   "read_only": 1
+   "in_list_view": 1
   },
   {
    "fieldname": "received_qty",
@@ -79,6 +78,21 @@
    "label": "Reqd Bags",
    "hidden": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "po_qty_manual",
+   "fieldtype": "Check",
+   "label": "PO Qty typed by hand",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "field_order": [
@@ -86,12 +100,14 @@
   "reqd_by_date",
   "fabric_item",
   "yarn_item",
+  "supplier",
   "reqd_qty",
   "po_qty",
   "received_qty",
   "balance_qty",
   "remarks",
-  "reqd_bags"
+  "reqd_bags",
+  "po_qty_manual"
  ],
  "istable": 1,
  "editable_grid": 1

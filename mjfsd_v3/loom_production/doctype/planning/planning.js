@@ -97,7 +97,11 @@ frappe.ui.form.on("Planning Order", {
 });
 
 frappe.ui.form.on("Planning Yarn", {
-	reqd_qty: (frm) => set_totals(frm)
+	reqd_qty: (frm) => set_totals(frm),
+	po_qty(frm, cdt, cdn) {
+		// typed PO Qty is kept (not replaced by the Purchase Order figure); 0 hands it back to the system
+		frappe.model.set_value(cdt, cdn, "po_qty_manual", flt(locals[cdt][cdn].po_qty) ? 1 : 0);
+	}
 });
 
 function set_totals(frm) {

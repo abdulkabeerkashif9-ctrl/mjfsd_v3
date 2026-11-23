@@ -108,16 +108,17 @@ def get_weaving_contracts(orders):
 
 # ───────────────────────────── figures re-read from the system ─────────────────────────────
 def po_figures(sales_order, yarn_item):
+	"""(PO qty, received qty, first supplier) of the submitted Purchase Orders of this Sales Order + yarn."""
 	row = frappe.db.sql(
 		"""
-		select ifnull(sum(i.qty), 0), ifnull(sum(i.received_qty), 0)
+		select ifnull(sum(i.qty), 0), ifnull(sum(i.received_qty), 0), min(p.supplier)
 		from `tabPurchase Order Item` i
 		inner join `tabPurchase Order` p on p.name = i.parent
 		where p.docstatus = 1 and i.sales_order = %s and i.item_code = %s
 		""",
 		(sales_order, yarn_item),
 	)
-	return (flt(row[0][0]), flt(row[0][1])) if row else (0.0, 0.0)
+	return (flt(row[0][0]), flt(row[0][1]), row[0][2]) if row else (0.0, 0.0, None)
 
 
 def yarn_status(issued, required):
@@ -132,7 +133,14 @@ def yarn_status(issued, required):
 def refresh_figures(doc):
 	for r in doc.get("yarn_requirements") or []:
 		if r.sales_order and r.yarn_item:
-			r.po_qty, r.received_qty = po_figures(r.sales_order, r.yarn_item)
+			po_qty, r.received_qty, supplier = po_figures(r.sales_order, r.yarn_item)
+			# a PO Qty typed by hand is kept; clearing it to 0 hands it back to the system
+			if not flt(r.po_qty):
+				r.po_qty_manual = 0
+			if not r.get("po_qty_manual"):
+				r.po_qty = po_qty
+			if not r.get("supplier") and supplier:
+				r.supplier = supplier
 		r.balance_qty = flt(r.reqd_qty) - flt(r.received_qty)
 	for r in doc.get("weaving") or []:
 		if not r.weaving_contract:
