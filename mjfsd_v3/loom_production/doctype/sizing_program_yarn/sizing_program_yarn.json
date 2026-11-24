@@ -31,7 +31,8 @@
   "balance_yarn",
   "bags_issue",
   "po_ref",
-  "sizing_program_row"
+  "sizing_program_row",
+  "lbs_issue_manual"
  ],
  "fields": [
   {
@@ -100,8 +101,8 @@
    "label": "LBS Issue",
    "in_list_view": 1,
    "columns": 1,
-   "read_only": 1,
-   "description": "Net Meter x Ends / 768.1 / Yarn Count"
+   "read_only": 0,
+   "description": "Net Meter x Ends / 768.1 / Yarn Count. Type a value to override; clear it (0) to go back to the formula."
   },
   {
    "fieldname": "sizing_beam",
@@ -219,6 +220,14 @@
    "in_list_view": 1,
    "default": "0",
    "description": "Sizing rate of this beam (per LBS)."
+  },
+  {
+   "fieldname": "lbs_issue_manual",
+   "fieldtype": "Check",
+   "label": "LBS Issue typed by hand",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "index_web_pages_for_search": 1,

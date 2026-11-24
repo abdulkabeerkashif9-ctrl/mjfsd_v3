@@ -95,8 +95,11 @@ def calculate_rows(doc, default_wastage=None):
 			(flt(row.ends) / CONSTANT) / flt(row.yarn_count) if flt(row.yarn_count) else 0
 		)
 		row.lbs = flt(row.net_meter) * row.yarn_consumption_per_meter
-		# LBS Issue = (Net Meter x Ends) / 768.1 / Yarn Count
-		row.lbs_issue = row.lbs
+		# LBS Issue = (Net Meter x Ends) / 768.1 / Yarn Count, unless typed by hand (0 / empty = formula again)
+		if not flt(row.get("lbs_issue")):
+			row.lbs_issue_manual = 0
+		if not row.get("lbs_issue_manual"):
+			row.lbs_issue = row.lbs
 		row.wastage = row.lbs * wpct / 100
 		row.gross_meter = flt(row.net_meter) * (1 + wpct / 100)
 		row.bags_issue = (flt(row.lbs_issue) + row.wastage) / (flt(row.lbs_per_bag) or 100)

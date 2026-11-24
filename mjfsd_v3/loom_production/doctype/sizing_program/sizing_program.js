@@ -810,15 +810,15 @@ if (!window.__sizing_yarn_rows_loaded) {
         const ycpm = flt(r.yarn_count) ? (flt(r.ends) / 768.1) / flt(r.yarn_count) : 0;
         const lbs = flt(r.net_meter) * ycpm;
         const wastage = lbs * wpct / 100;
-        // LBS Issue = (Net Meter x Ends) / 768.1 / Yarn Count
-        r.lbs_issue = lbs;
+        // LBS Issue = (Net Meter x Ends) / 768.1 / Yarn Count, unless typed by hand
+        if (!r.lbs_issue_manual) { r.lbs_issue = lbs; }
         const upd = {
             cone_weight: flt(r.cones_per_bag) ? flt(r.lbs_per_bag) / flt(r.cones_per_bag) : 0,
             yarn_consumption_per_meter: ycpm,
             lbs: lbs,
             wastage: wastage,
             gross_meter: flt(r.net_meter) * (1 + wpct / 100),
-            bags_issue: (lbs + wastage) / (flt(r.lbs_per_bag) || 100)
+            bags_issue: ((r.lbs_issue_manual ? flt(r.lbs_issue) : lbs) + wastage) / (flt(r.lbs_per_bag) || 100)
         };
         if (!r.sizing_program_row) {
             upd.balance_net_meter = flt(r.net_meter);
@@ -829,6 +829,12 @@ if (!window.__sizing_yarn_rows_loaded) {
     };
 
     const recalc_fields = ["yarn_count", "cones_per_bag", "lbs_per_bag", "net_meter", "ends", "wastage_percent"];
+    // typing LBS Issue keeps it (a manual override); clearing it goes back to the formula
+    const on_lbs_issue = function (frm, cdt, cdn) {
+        const r = locals[cdt][cdn];
+        r.lbs_issue_manual = flt(r.lbs_issue) ? 1 : 0;
+        window.sizing_yarn_recalc_row(frm, cdt, cdn);
+    };
     const handlers = {
         form_render: function (frm, cdt, cdn) { window.sizing_yarn_recalc_row(frm, cdt, cdn); },
         yarn_items_add: function (frm, cdt, cdn) {
@@ -849,6 +855,7 @@ if (!window.__sizing_yarn_rows_loaded) {
         }
     };
     ["sizing_beam", "beam_item", "yarn_item"].forEach(f => { handlers[f] = function (frm, cdt, cdn) { check_beam_rule(frm, cdt, cdn); if (f === "yarn_item" || f === "beam_item") { window.sizing_yarn_recalc_row(frm, cdt, cdn); } }; });
+    handlers.lbs_issue = on_lbs_issue;
     recalc_fields.forEach(f => { handlers[f] = function (frm, cdt, cdn) { window.sizing_yarn_recalc_row(frm, cdt, cdn); }; });
     frappe.ui.form.on("Sizing Program Yarn", handlers);
 }
